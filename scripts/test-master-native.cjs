@@ -137,6 +137,40 @@ async function main() {
       await appEval("document.getElementById('master-app-settings').click();true");
       await until(() => page.locator('[data-page="settings"]').evaluate(element => element.getAttribute("aria-current") === "page"), "App settings did not navigate to Core Settings");
     });
+    await check("A locked imported wallet routes the mismatched producer key to unlock without submitting", async () => {
+      const result = await appEval(`(async () => {
+        const saved = { wallet: S.wallet, walletStage: S.walletStage, producer: S.producer, node: S.node, view: S.view };
+        const originalCall = call, calls = [];
+        try {
+          S.wallet = { exists: true, unlocked: false, address: 'synthetic-address' };
+          S.walletStage = 'locked';
+          S.producer = { mode: 'local', address: 'synthetic-address', filePublicKey: 'current-key', registeredPublicKey: 'old-key', matches: false };
+          S.node = { ...S.node, op: null };
+          call = async (channel, payload) => {
+            calls.push(channel);
+            if (channel === 'wallet:status') return S.wallet;
+            if (channel === 'producer:register') throw Error('Synthetic unlock must never submit');
+            return originalCall(channel, payload);
+          };
+          renderWalletView(); patchRegistration();
+          const button = document.getElementById('n-register');
+          const before = { label: button.textContent, disabled: button.disabled, hint: document.getElementById('n-reg-hint').textContent };
+          button.click();
+          await new Promise(resolve => setTimeout(resolve, 0));
+          const routed = S.view === 'wallet' && document.getElementById('view-wallet').classList.contains('active');
+          const focused = document.activeElement?.id === 'uw-pass';
+          S.wallet = { ...S.wallet, unlocked: true };
+          await refreshWallet();
+          return { before, routed, focused, after: { label: button.textContent, disabled: button.disabled }, submitted: calls.includes('producer:register') };
+        } finally {
+          call = originalCall; Object.assign(S, saved); renderWalletView(); patchRegistration(); switchView(saved.view);
+        }
+      })()`);
+      assert.equal(result.before.disabled, false); assert.equal(result.before.label, "Unlock wallet to register");
+      assert.match(result.before.hint, /different key.*Unlock this plugin's wallet/);
+      assert.equal(result.routed, true); assert.equal(result.focused, true); assert.equal(result.submitted, false);
+      assert.equal(result.after.disabled, false); assert.equal(result.after.label, "Register signing key");
+    });
     await check("No feature startup failures or uncaught renderer exceptions", async () => {
       report.runtime = await application.evaluate(() => ({ background: [...global.__foundationServices.backgroundErrors], errors: global.__foundationSmoke.errors, fixture: global.__masterNativeFixture }));
       assert.deepEqual(report.runtime.background, []); assert.deepEqual(report.runtime.errors, []);

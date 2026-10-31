@@ -23,6 +23,7 @@ const S = {
   dashboardRendered: false,
   view: "dashboard",
   walletStage: null,  // "none" | "locked" | "unlocked"
+  registeringKey: false,
   pendingWif: null,   // shown once after create
 };
 
@@ -150,6 +151,7 @@ async function refreshWallet() {
     renderWalletView();
     renderBurnView();
   }
+  patchRegistration();
 }
 
 async function refreshBalances(force = false) {
@@ -1470,17 +1472,64 @@ async function onStopNode() {
   }
 }
 
+function registrationState() {
+  const p = S.producer;
+  const blocked = hint => ({ label: "Register signing key", hint, action: null });
+  if (S.registeringKey) return { label: "Registering…", hint: "Waiting for the registration review or transaction result.", action: null };
+  if (!p) return { label: "Check registration", hint: "Registration status is unavailable. Check again before registering a key.", action: "refresh" };
+  if (!["local", "external"].includes(p.mode)) return blocked(p.verificationError || "Confirm the producer wallet custody mode before registering a key.");
+  if (p.mode === "external") return blocked(p.matches
+    ? "External producer registration verified. The node holds only its hot production key."
+    : p.verificationError || "Use External signing above to register this hot key with your separate wallet.");
+  if (p.matches) return { label: "Signing key registered", hint: "Signing key registered on chain.", action: null };
+  if (S.node?.op?.running) return blocked("Wait for the current node operation to finish before registering a key.");
+  if (!p.filePublicKey) return blocked("The signing key appears after the node's first start.");
+  if (!p.address || S.walletStage === "none") return { label: "Set up Node wallet", hint: "Create or import your wallet in this plugin before registering the node key.", action: "wallet" };
+  const mismatch = p.registeredPublicKey ? "A different key is registered on chain for this address. " : "";
+  if (S.walletStage !== "unlocked") return { label: "Unlock wallet to register", hint: mismatch + "Unlock this plugin's wallet, then return to Node to review registration of the current node key.", action: "wallet" };
+  if (p.verificationError) return { label: "Check registration", hint: p.verificationError, action: "refresh" };
+  return { label: "Register signing key", hint: mismatch ? mismatch + "Register the current node key to replace it." : "Review and approve registration of this node's signing key.", action: "register" };
+}
+
+function patchRegistration() {
+  const button = $("#n-register"), hint = $("#n-reg-hint");
+  if (!button || !hint) return;
+  const state = registrationState();
+  button.disabled = !state.action;
+  KaiI18n.setText(button, state.label);
+  KaiI18n.setText(hint, state.hint);
+  if (S.producer?.matches) {
+    const quickSync = S.node?.op?.running && S.node.op.name === "quick-sync";
+    hint.textContent += quickSync ? " Block production is paused for quick sync." : !S.node?.isRunning ? " The node is stopped; no blocks are being produced here." : " Production also requires an in-sync node with block production enabled.";
+  }
+}
+
 async function onRegisterKey() {
-  const btn = $("#n-register");
-  busyButton(btn, true, "Registering…");
+  if (S.registeringKey) return;
+  const action = registrationState().action;
+  if (action === "wallet") {
+    switchView("wallet");
+    try {
+      await refreshWallet();
+      $("#uw-pass")?.focus();
+    } catch (e) {
+      toast(e.message, "bad");
+    }
+    return;
+  }
+  if (action === "refresh") return refreshNode();
+  if (action !== "register") return;
+  S.registeringKey = true;
+  patchRegistration();
   try {
     const res = await call("producer:register");
     txToast(res, "Producer key registration");
-    refreshNode();
+    await refreshNode();
   } catch (e) {
     toast(e.message, "bad");
   } finally {
-    busyButton(btn, false);
+    S.registeringKey = false;
+    patchRegistration();
   }
 }
 
@@ -1805,7 +1854,7 @@ function patchNodeView() {
       ],
       [quickSync ? "pending" : st(n?.isRunning), quickSync ? (n?.isRunning ? "Node stopping for quick sync" : "Node stopped for quick sync") : "Node running", quickSync ? "Wait for the restore to finish, then start the node." : "Start the node above."],
       [st(!!p?.filePublicKey), "Signing key generated", "Generated automatically by the node on first start."],
-      [st(!!p?.matches), "Signing key registered on chain", "Register it with the button below (needs unlocked wallet + mana)."],
+      [st(!!p?.matches), "Signing key registered on chain", p?.mode === "external" ? "Use External signing above to register your node key." : "Use the button below to unlock this plugin wallet or review registration (needs mana)."],
     ];
     if (n?.isRunning && n?.production?.reason) items.push(["empty", "Last observed block submission failed", n.production.reason === "vhp-burn-rejected" ? "VHP burn rejected. Approve a production allowance in Koin Vault; registration alone does not confirm successful production." : "Check block_producer logs for the rejection reason."]);
     const tickFor = (s) => (s === "ok" ? "✅" : s === "pending" ? "⏳" : "⬜");
@@ -1815,27 +1864,8 @@ function patchNodeView() {
           <span>${esc(label)}${state === "ok" ? "" : KaiI18n.html`<br><span class="muted small">${esc(hint)}</span>`}</span></li>`
       )
       .join("");
-    const reg = $("#n-register");
-    const regHint = $("#n-reg-hint");
-    const canRegister = p?.mode !== "external" && !!p?.filePublicKey && S.walletStage === "unlocked" && !p?.matches;
-    reg.disabled = !canRegister;
     if ($("#pc-public")) $("#pc-public").value = p?.filePublicKey || "";
-    if (p?.mode === "external") {
-      KaiI18n.setText(regHint, p.matches ? "External producer registration verified. The node holds only its hot production key." : p.verificationError || "Use External signing above to register this hot key with your separate wallet.");
-    } else if (p?.matches) {
-      KaiI18n.setText(regHint, "Signing key registered on chain.");
-    } else if (p?.registeredPublicKey && p?.filePublicKey && !p.matches) {
-      KaiI18n.setText(regHint, "⚠️ A different key is registered on chain for this address. Register the current node key to replace it.");
-    } else if (!p?.filePublicKey) {
-      KaiI18n.setText(regHint, "The signing key appears after the node's first start.");
-    } else if (S.walletStage !== "unlocked") {
-      KaiI18n.setText(regHint, "Unlock your wallet to register.");
-    } else {
-      regHint.textContent = "";
-    }
-    if (p?.matches) {
-      regHint.textContent += quickSync ? " Block production is paused for quick sync." : !n?.isRunning ? " The node is stopped; no blocks are being produced here." : " Production also requires an in-sync node with block production enabled.";
-    }
+    patchRegistration();
   }
 }
 
