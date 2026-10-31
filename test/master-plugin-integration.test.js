@@ -5,7 +5,7 @@ const { createKoinosNode } = require("../plugin/service/core/lib/koinos-node");
 const { Signer } = require("../plugin/service/node_modules/koilib");
 
 function fixture() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kai-master-integration-"));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "kai-master-integration-")));
   const address = Signer.fromSeed("master plugin isolated public fixture only").address;
   let services, approved = true, held = false, signatures = 0;
   const reviews = [], wallet = { address, status: () => ({ exists: true, address: wallet.address, unlocked: true }),

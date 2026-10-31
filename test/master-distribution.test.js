@@ -1525,7 +1525,7 @@ test("engine: an uncertain payout stays queued without a second submission", asy
 function recoveryWorld(t) {
   const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
   const { GuardedStore } = require("../plugin/service/electron/plugin-services/guarded-store");
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "master-distribution-recovery-"));
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "master-distribution-recovery-")));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const world = makeWorld({ totals: { current: { rewards: KOIN(100), vhpConsumed: "0" } }, headers: [], vhp: {},
     balances: { koin: KOIN(1000), mana: KOIN(1000), vhp: "0" } });
