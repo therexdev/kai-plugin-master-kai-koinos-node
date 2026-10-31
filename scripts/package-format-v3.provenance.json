@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "packageSchema": 2,
+  "packageApiVersion": 3,
+  "minimumCoreVersion": "0.7.0",
+  "sourceRepository": "therexdev/kai-core",
+  "sourcePath": "core/lib/plugins/package.js",
+  "sha256": "dfe9d01ed3490001c86a8100358fbd4d9d0e06f0e25461d2e09d2100dcee544e",
+  "note": "Exact Foundation v3 verifier snapshot. Refresh together with reviewed Core package-format changes."
+}

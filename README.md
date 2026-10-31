@@ -23,6 +23,8 @@ The plugin ID is `kai.master-kai-koinos-node`. Core supplies a separate data dir
 
 Import a wallet deliberately if you want to use an existing address. Chain migration requires a reviewed source and explicit confirmation; it does not transfer wallets, private production keys, KOIN or VHP. Do not start a second node against the same data or ports. Existing node ownership checks prevent silently taking over another profile's stack.
 
+To bring an existing **Master Koinos AI Node** chain over, open **Node settings → Migrate from Master Koinos AI Node**. Close the old Master app, including its tray process, review the detected source/network and destination, then confirm. Migration stops only the verified Master containers and transfers the chain with progress and pause/resume support. Files on the same drive can move without keeping another full copy; cross-drive transfers verify each copy before removing its source. Ordinary Koinos Node profiles are not accepted as Master migration sources. Mining remains off after migration.
+
 Changing pages and closing Core to its tray keep the plugin service active. Disable/remove stops its managed node and drains work. Quitting Core stops the plugin's supervisor, API and scheduled work; already-running Docker containers retain the Node plugin's continuity behavior. Use **Stop node** when you want those containers stopped.
 
 ## Trust and architecture

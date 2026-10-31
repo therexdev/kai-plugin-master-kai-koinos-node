@@ -1,0 +1,10 @@
+node_modules/
+*.pem
+*.key
+.DS_Store
+/dist/*.kaiplugin
+/.smoke/
+!plugin/service/node_modules/
+!plugin/service/node_modules/**
+/.test-core/
+/.ordinary-node/

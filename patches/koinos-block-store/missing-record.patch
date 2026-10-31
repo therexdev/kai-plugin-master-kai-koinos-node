@@ -1,0 +1,27 @@
+diff --git a/internal/bstore/reqhandler.go b/internal/bstore/reqhandler.go
+--- a/internal/bstore/reqhandler.go
++++ b/internal/bstore/reqhandler.go
+@@ -182,8 +182,9 @@ func (handler *RequestHandler) fillBlocks(
+ 			return nil, err
+ 		}
+ 		if len(recordBytes) == 0 {
+-			// If block does not exist, return a default-initialized block.
+-			continue
++			// Do not leave nil items that GetBlocksByHeight will dereference.
++			// Report the missing record without returning a partial history range.
++			return nil, &BlockNotPresent{blockID: lastID}
+ 		}
+ 
+ 		record := block_store.BlockRecord{}
+diff --git a/cmd/koinos-block-store/main.go b/cmd/koinos-block-store/main.go
+--- a/cmd/koinos-block-store/main.go
++++ b/cmd/koinos-block-store/main.go
+@@ -249,7 +249,7 @@ func makeVersionString() string {
+ func makeVersionString() string {
+ 	commitString := ""
+ 	if len(Commit) >= 8 {
+-		commitString = fmt.Sprintf("(%s)", Commit[0:8])
++		commitString = fmt.Sprintf("(%s)", Commit)
+ 	}
+ 
+ 	return fmt.Sprintf("%s %s %s", DisplayAppName, Version, commitString)

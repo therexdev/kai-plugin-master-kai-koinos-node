@@ -1,0 +1,130 @@
+name: Validate and publish Foundation plugin
+on:
+  push:
+    branches: [main, foundation-v1]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: plugin-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    outputs:
+      release_ready: ${{ steps.package.outputs.release_ready }}
+      asset: ${{ steps.package.outputs.asset }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Rebuild locked dependencies without install hooks
+        shell: bash
+        run: |
+          if test -f package-lock.json; then npm ci --ignore-scripts; fi
+          npm run build --if-present
+          git diff --exit-code -- plugin
+      - name: Verify Foundation source and dependency payloads
+        run: node scripts/verify-package.js --source
+      - run: npm test
+      - name: Verify patched history runtime in a disposable Docker stack
+        if: runner.os == 'Linux'
+        run: node scripts/master-block-store-smoke.js
+      - name: Checkout the released Core host for native integration tests
+        uses: actions/checkout@v4
+        with:
+          repository: therexdev/kai-core
+          ref: 4a5e8863612496f153002faadc60ac7ec47b8eb8
+          path: .test-core
+          persist-credentials: false
+      - name: Checkout the ordinary Node plugin for coexistence tests
+        uses: actions/checkout@v4
+        with:
+          repository: therexdev/kai-plugin-koinos-node
+          ref: 88ec1da498f652213f8abbd6263a1359519fb972
+          path: .ordinary-node
+          persist-credentials: false
+      - name: Prepare the released Electron host
+        working-directory: .test-core
+        run: |
+          npm ci --ignore-scripts
+          node node_modules/electron/install.js
+      - name: Configure Electron sandbox helper on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root:root .test-core/node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 .test-core/node_modules/electron/dist/chrome-sandbox
+      - name: Native Master workspace and migration integration (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/test-master-native.cjs
+        env:
+          KAI_CORE_SOURCE: ${{ github.workspace }}/.test-core
+          KAI_ORDINARY_NODE_SOURCE: ${{ github.workspace }}/.ordinary-node/plugin
+          KAI_MASTER_NATIVE_OUTPUT: ${{ github.workspace }}/.smoke/master-native
+      - name: Native Master workspace and migration integration (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: node scripts/test-master-native.cjs
+        env:
+          KAI_CORE_SOURCE: ${{ github.workspace }}/.test-core
+          KAI_ORDINARY_NODE_SOURCE: ${{ github.workspace }}/.ordinary-node/plugin
+          KAI_MASTER_NATIVE_OUTPUT: ${{ github.workspace }}/.smoke/master-native
+      - name: Preserve native workspace results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: master-node-native-${{ runner.os }}
+          path: .smoke/master-native/
+          if-no-files-found: warn
+      - name: Assemble immutable signed asset parts
+        run: node scripts/assemble-signed-package.js
+      - name: Detect signed package for this exact version
+        id: package
+        shell: bash
+        run: |
+          node -e 'const fs=require("node:fs"),p=require("./package.json"),m=require("./plugin/manifest.json"),asset=p.name+"-"+m.version+".kaiplugin";fs.appendFileSync(process.env.GITHUB_OUTPUT,"asset="+asset+"\nrelease_ready="+fs.existsSync("dist/"+asset)+"\n")'
+      - name: Verify release signature and exact source contents
+        if: steps.package.outputs.release_ready == 'true'
+        run: node scripts/verify-package.js
+  release:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && needs.verify.outputs.release_ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Assemble immutable signed asset parts
+        run: node scripts/assemble-signed-package.js
+      - name: Verify signed immutable asset again before publication
+        run: node scripts/verify-package.js
+      - name: Publish only the pre-signed current package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ needs.verify.outputs.asset }}
+        shell: bash
+        run: |
+          version=$(node -p "require('./plugin/manifest.json').version")
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            mkdir -p "$RUNNER_TEMP/existing-release"
+            gh release download "$tag" --pattern "$ASSET" --dir "$RUNNER_TEMP/existing-release"
+            cmp "dist/$ASSET" "$RUNNER_TEMP/existing-release/$ASSET"
+          else
+            gh release create "$tag" "dist/$ASSET" --target "$GITHUB_SHA" --title "$(node -p "require('./plugin/manifest.json').name") $version" --notes-file RELEASE_NOTES.md
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-plugin
+          path: dist/${{ needs.verify.outputs.asset }}
+          if-no-files-found: error

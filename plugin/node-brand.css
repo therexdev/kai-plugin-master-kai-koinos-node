@@ -1,0 +1,47 @@
+/* KAI's shared visual language over the vendored node UI. The vendor's
+   renderer/styles and the live wallet/node behavior stay untouched. */
+:root{color-scheme:light;--bg:#f5f8fd;--bg-2:#f6f9ff;--card:#fff;--card-2:#edf4ff;--border:#dce6f4;--text:#193457;--muted:#5e7392;--accent:#155eef;--accent-2:#0875eb;--good:#168469;--warn:#98690e;--bad:#c93d4c}
+*{scrollbar-width:thin;scrollbar-color:#bccce3 transparent}
+body{font-family:Inter,"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,Ubuntu,sans-serif;font-size:14px;line-height:1.55}
+#main{padding:30px 30px 60px}.view{max-width:1100px;margin:0 auto}
+h1{font-size:28px;letter-spacing:-.8px;font-weight:650;color:#163963;margin-bottom:6px}h2{font-size:16px;font-weight:650;letter-spacing:-.25px}.lead{font-size:13px;line-height:1.8;margin-bottom:25px}
+.card{border-radius:18px;padding:23px;box-shadow:0 5px 20px #203e6c05;margin-bottom:20px}
+.stat{padding:19px;border:1px solid #e2ebf8;background:#f7faff;border-radius:13px}.stat .label{font-size:10px;letter-spacing:1px;color:#5f7695}.stat .value{font-size:24px;color:#1855a3;letter-spacing:-.6px;font-variant-numeric:tabular-nums}.stat .sub{font-size:11px}
+button.btn{border-radius:10px;padding:10px 16px;font-size:12px}button.btn.primary{background:linear-gradient(135deg,#1686f6,#0e59df);color:#fff;box-shadow:0 3px 9px #155eef20}.pill{font-size:10px;padding:4px 10px;border-color:#dae6f8}
+input,select,textarea{min-width:0}input[type=text],input[type=url],input[type=password],input[type=number],select,textarea{background:#f9fbff;border-radius:10px;padding:11px 13px;font-size:13px}
+input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid #155eef;outline-offset:3px}
+::selection{background:#c9dcff;color:#13294e}.addr{padding:11px 14px;border-radius:10px;color:#365d8a;font-size:12px}
+th{font-size:10px;letter-spacing:.6px;text-transform:uppercase;padding:12px 9px}td{padding:12px 9px;border-color:#e2eaf6}.status-line{font-size:18px}.dot{width:8px;height:8px}
+pre.logs{background:#102441;color:#dcecff;border-color:#284362;border-radius:12px;padding:17px;line-height:1.8}
+.tile{background:#f5f9ff;border-color:#dde8f8;border-radius:13px}.tile .value{color:#1855a3}.modal{background:#fff;border-color:#dce6f4;border-radius:20px;box-shadow:0 22px 70px #122c5130}.modal-backdrop{background:#18304d55}
+.warn-box,.warning{background:#fff8e8;color:#855e16;border-color:#eed9a9}.error{color:#bd3546}.progress{border:0;height:7px;background:#e6edf8}.good-text{color:#168469}
+@media(max-width:600px){#main{padding:22px 18px 45px}.card{padding:18px}.stat{padding:15px}.stat .value{font-size:21px}h1{font-size:25px}.grid-2,.grid-3{gap:12px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+
+.banner.warn{background:#fff8e8;color:#855e16;border-color:#eed9a9}.banner.bad{background:#fff0f2;color:#ab3446;border-color:#edc3ca}.banner.info{background:#edf5ff;color:#3265a1;border-color:#ccdef7}
+.wif-box{color:#855e16;background:#fff9ec;border-color:#e7cf9b}.tile .t-value{color:#235591}
+.node-modal-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.modal .node-modal-heading h2{margin:3px 0 0;line-height:1.4}.node-modal-close{flex:none;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);font-family:inherit;font-size:24px;line-height:1;cursor:pointer}.node-modal-close:hover{background:var(--bg);color:var(--text)}.modal .actions{flex-wrap:wrap}.modal-backdrop{backdrop-filter:blur(3px)}
+
+/* Give every dashboard section a consistent header and space above its tiles. */
+#view-dashboard>.card:not(.status-card)>.row:first-child{gap:12px 18px;margin-bottom:16px}
+#view-dashboard>.card:not(.status-card)>.row:first-child h2{margin-bottom:0}
+#view-dashboard>.card>.widget-grid:last-child{margin-bottom:0}
+#d-producer-source:empty{display:none}
+
+/* Producer custody uses the same calm fields and spacing as the node settings. */
+.producer-custody .custody-actions{gap:10px;margin:4px 0 20px}
+.producer-custody .custody-key-row{display:flex;align-items:flex-end;gap:10px}
+.producer-custody .custody-key-row .field{flex:1;min-width:0;margin:0}
+.producer-custody .custody-key-row .btn{flex:none;min-height:42px}
+.producer-custody input[readonly]{color:var(--muted);background:var(--bg-2)}
+.producer-custody #pc-result:empty{display:none}
+.producer-custody #pc-result{margin:12px 0 0;overflow-wrap:anywhere}
+.producer-custody .custody-signing{margin-top:20px;border-top:1px solid var(--border);padding-top:16px}
+.producer-custody .custody-signing summary{cursor:pointer;color:var(--text);line-height:1.5}
+.producer-custody .custody-signing-content{display:grid;gap:14px;padding-top:16px;min-width:0}
+.producer-custody .custody-signing-content .field,.producer-custody .custody-signing-content .hint{margin:0}
+.producer-custody .custody-signing-content>.btn{justify-self:start}
+.producer-custody textarea{resize:vertical;font-family:var(--mono);line-height:1.5}
+@media(max-width:600px){.producer-custody .custody-key-row{align-items:stretch;flex-direction:column}.producer-custody .custody-key-row .btn{align-self:flex-start}.producer-custody .custody-actions .btn{flex:1 1 150px}}
+/* Wallet history keeps the original node table and card language. */
+#node-wallet-history{margin-top:20px}#node-wallet-history .table-wrap{overflow-x:auto}#node-wallet-history td:first-child{max-width:330px;overflow-wrap:anywhere}#node-wallet-history .btn.ghost{padding:3px 7px;font-size:11px}.node-notice-close{margin-left:16px;border:0;background:transparent;color:inherit;font-size:20px;cursor:pointer}

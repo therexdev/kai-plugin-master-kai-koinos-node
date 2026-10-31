@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "patch": "missing-record-v1",
+  "version": "2bb94558-kai-missing-record-v1",
+  "platform": "linux/amd64",
+  "upstreamCommit": "2bb94558df61c71eb241002635444cdddce0843c",
+  "goVersion": "go1.27.1",
+  "patchSha256": "9ce440b9968e38f0eca73242006d3bbbebbc9574c5ef3f6683d1481f935e0077",
+  "files": [
+    {
+      "name": "koinos_block_store",
+      "sha256": "14c5bdbdf3ea047cefe59a475b75b8d457e55f81f23fb8524d51954b5b1ec33b"
+    },
+    {
+      "name": "start.sh",
+      "sha256": "76ecd97ebba6a0595e7cbfe37c9120babe76b33f6febcfc1547b84e6e4f5c489"
+    },
+    {
+      "name": "LICENSE.md",
+      "sha256": "1e0040b57270d27bdb2e3fb241295c5d2a417f72b4eb579f6a7ce0a270e15428"
+    }
+  ]
+}

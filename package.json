@@ -1,0 +1,20 @@
+{
+  "name": "kai-plugin-master-kai-koinos-node",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/vendor-dependencies.js && node scripts/master-block-store-verify.js",
+    "build:runtime": "node scripts/master-block-store-build.js",
+    "verify:runtime": "node scripts/master-block-store-verify.js",
+    "test:native": "node scripts/test-master-native.cjs"
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "@noble/secp256k1": "1.7.2",
+    "ethers": "6.17.0",
+    "koilib": "9.4.0"
+  },
+  "description": "Developer node workspace with the complete Master Node dashboard, Node API and community distribution."
+}

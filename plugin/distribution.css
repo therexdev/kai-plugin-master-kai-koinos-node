@@ -1,0 +1,21 @@
+/* The distribution split: one row per slice of the profit, with its percentage
+   box on the right. The final row (what stays in the wallet) is derived, not
+   entered, so it reads as a total rather than another input. */
+.split-table td { padding: 6px 0; border-bottom: 1px solid rgba(38, 52, 82, 0.5); vertical-align: middle; }
+.split-table tr:last-child td { border-bottom: none; }
+.split-pct { width: 92px; text-align: right; white-space: nowrap; color: var(--muted); }
+.split-pct input[type="number"] {
+  width: 76px; min-width: 76px; text-align: right; padding: 5px 6px; margin-right: 4px; display: inline-block;
+}
+.split-table .split-rest td { border-top: 1px solid var(--border); padding-top: 9px; }
+.split-table .split-rest .split-pct { color: var(--text); }
+
+.distribution-recipient {
+  display: grid; grid-template-columns: minmax(0, 1fr) 80px;
+  gap: 10px; padding: 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card-2); margin-bottom: 10px;
+}
+.distribution-recipient .field { margin: 0; min-width: 0; }
+.distribution-recipient input { width: 100%; }
+.distribution-recipient .recipient-name { grid-column: 1 / -1; }
+.distribution-recipient .di-recipient-remove { grid-column: 1 / -1; justify-self: end; }

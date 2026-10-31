@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'"
+  />
+  <title>Master KAI Koinos Node</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="distribution.css" />
+  <link rel="stylesheet" href="node-brand.css" />
+  <link rel="stylesheet" href="master-node-shell.css" />
+  <link rel="stylesheet" href="node-migration.css" />
+</head>
+<body>
+  <header class="master-workspace-header"><div><p class="master-workspace-eyebrow">YOUR AI WORKSPACE</p><h1 id="master-workspace-title">Master KAI Koinos Node</h1></div><p class="master-workspace-caption">Your wallet. Your node. Your contribution.</p></header>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="master-rail-label">Koinos Node</div>
+      <nav id="nav">
+        <button class="nav-item active" data-view="dashboard">Dashboard</button>
+        <button class="nav-item" data-view="wallet">Wallet</button>
+        <button class="nav-item" data-view="fund">Fund node</button>
+        <button class="nav-item" data-view="burn">Burn KOIN → VHP</button>
+        <button class="nav-item" data-view="node">Node</button>
+        <button class="nav-item" data-view="distribution">Distribution</button>
+        <button class="nav-item" data-view="master-api">Node API</button>
+        <button class="nav-item" data-view="returns">Reward returns</button>
+        <button class="nav-item" data-view="settings">Node settings</button>
+      </nav>
+      <div class="master-rail-foot"><button id="master-app-settings" type="button" class="master-app-settings">App settings</button></div>
+      <div hidden><span id="network-pill"></span><span id="version-tag"></span></div>
+    </aside>
+    <main id="main">
+      <section id="view-dashboard" class="view active"></section>
+      <section id="view-wallet" class="view"></section>
+      <section id="view-fund" class="view"></section>
+      <section id="view-burn" class="view"></section>
+      <section id="view-node" class="view"></section>
+      <section id="view-distribution" class="view"></section>
+      <section id="view-master-api" class="view"></section>
+      <section id="view-returns" class="view"></section>
+      <section id="view-settings" class="view"></section>
+    </main>
+  </div>
+  <div id="toasts"></div>
+  <div id="modal-root"></div>
+  <dialog id="node-migration-dialog" class="node-migration-dialog" aria-labelledby="node-migration-title" aria-describedby="node-migration-intro">
+    <form id="node-migration-form">
+      <header class="node-migration-header"><div><span class="node-migration-eyebrow">Bring your chain data with you</span><h2 id="node-migration-title">Migrate from Master Koinos AI Node</h2></div><button id="node-migration-close" class="node-migration-close" type="button" aria-label="Close node migration">×</button></header>
+      <div class="node-migration-body">
+        <p id="node-migration-intro" class="node-migration-intro">Move chain data from Master Koinos AI Node into this plugin so it can manage your node.</p>
+        <dl class="node-migration-locations"><div class="node-migration-location"><dt>Master Node chain data</dt><dd id="node-migration-source"></dd></div><div class="node-migration-location"><dt>New plugin location</dt><dd id="node-migration-destination"></dd></div></dl>
+        <div class="node-migration-facts"><div><span>Network:</span> <strong id="node-migration-network"></strong></div><div id="node-migration-size"></div></div>
+        <p id="node-migration-method" class="node-migration-note"></p><p id="node-migration-detail" class="node-migration-note" hidden></p>
+        <p id="node-migration-wallet-note" class="node-migration-note node-migration-wallet"></p>
+        <div id="node-migration-review"><label class="node-migration-acknowledge"><input id="node-migration-acknowledge" type="checkbox"><span>I have closed Master Koinos AI Node, including its tray icon.</span></label><p class="node-migration-safety">The Master node will be stopped before transferring. Keep Master Koinos AI Node closed. You can pause safely and resume; completed files stay transferred. Neither node should be started until migration finishes.</p></div>
+        <div id="node-migration-progress-wrap" class="node-migration-progress" hidden><div class="node-migration-progress-heading"><span id="node-migration-progress-detail" role="status" aria-live="polite"></span><span id="node-migration-percent"></span></div><progress id="node-migration-progress" aria-label="Node migration progress"></progress><span id="node-migration-progress-count"></span></div>
+        <div id="node-migration-outcome" class="node-migration-outcome" role="status" aria-live="polite" aria-atomic="true" hidden><strong id="node-migration-outcome-title"></strong><p id="node-migration-outcome-detail"></p><p id="node-migration-outcome-warnings" hidden></p></div>
+        <p id="node-migration-error" role="alert" hidden></p>
+      </div>
+      <footer class="node-migration-footer"><button id="node-migration-recheck" class="btn ghost" type="button" hidden>Check again</button><div><button id="node-migration-dismiss" class="btn" type="button">Close</button><button id="node-migration-submit" class="btn primary" type="submit">Stop Master node and migrate</button></div></footer>
+    </form>
+  </dialog>
+  <script src="locales/catalogs.js"></script>
+  <script src="i18n.js"></script>
+  <script src="preferences.js"></script>
+  <script src="language-settings.js"></script>
+  <script src="bridge.js"></script>
+  <script src="qr.js"></script>
+  <script src="distribution.js"></script>
+  <script src="master-api.js"></script>
+  <script src="renderer.js"></script>
+  <script src="app.js"></script>
+  <script src="node-migration.js"></script>
+</body>
+</html>

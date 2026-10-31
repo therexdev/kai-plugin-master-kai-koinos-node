@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "repository": "therexdev/kaiapp",
+  "branch": "master-kaiapp",
+  "commit": "731ba26d30b86283630fff45e7d557bd71e79c6c",
+  "sourceTree": "d8af8d5d134156c9156ad29382eb1e47293c82fe",
+  "workflowRun": 41152854720,
+  "workflowPath": ".github/workflows/master-installers.yml",
+  "jobId": 124393114086,
+  "artifactId": 13023960365,
+  "artifactName": "master-node-runtime",
+  "artifactBytes": 5780976,
+  "artifactSha256": "3de4119413a6ab989cb599458982de0e69eceb9e238653c5691873789eb76bb8",
+  "verifiedChecks": [
+    "source commit and repository",
+    "successful upstream regression, suite and race tests",
+    "successful real upstream Docker-container smoke test",
+    "downloaded artifact SHA256 and size",
+    "exact runtime archive file set",
+    "runtime manifest and every file SHA256",
+    "local executable version output"
+  ],
+  "packagedNames": {
+    "koinos_block_store": "koinos_block_store.gz.bin",
+    "start.sh": "start.sh.txt",
+    "LICENSE.md": "LICENSE.md"
+  },
+  "packagingNote": "Deterministic gzip transport for the executable, extension-only rename for the wrapper. Upstream manifest bytes and decompressed runtime bytes/SHA256 hashes are unchanged; bounded verified staging restores original Docker filenames.",
+  "compressedRuntime": {
+    "filename": "koinos_block_store.gz.bin",
+    "encoding": "gzip",
+    "level": 9,
+    "mtime": 0,
+    "os": 255,
+    "bytes": 5758498,
+    "sha256": "c585bc4ab2482701d894fcdcad9e7eefa27e0db48d01cfa04bc342d0bb1078ae",
+    "originalBytes": 14901408,
+    "originalSha256": "14c5bdbdf3ea047cefe59a475b75b8d457e55f81f23fb8524d51954b5b1ec33b"
+  }
+}

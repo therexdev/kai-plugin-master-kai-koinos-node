@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "basePlugin": {
+    "repository": "therexdev/kai-plugin-koinos-node",
+    "commit": "88ec1da498f652213f8abbd6263a1359519fb972",
+    "version": "0.3.5"
+  },
+  "masterFeatures": {
+    "repository": "therexdev/kaiapp",
+    "branch": "master-kaiapp",
+    "commit": "731ba26d30b86283630fff45e7d557bd71e79c6c",
+    "version": "0.54.9-master.11"
+  },
+  "note": "Master Node features are merged into the current standalone Node plugin, retaining its wallet, migration, cancellation, configuration and reviewed-action fixes. All feature implementation is owned by this plugin."
+}
