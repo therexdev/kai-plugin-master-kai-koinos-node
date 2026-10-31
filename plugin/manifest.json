@@ -3,7 +3,7 @@
   "apiVersion": 3,
   "id": "kai.master-kai-koinos-node",
   "name": "Master KAI Koinos Node",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Developer node workspace with the full Master Node dashboard, wallet, block production, Node API and community distribution.",
   "entry": "index.html",
   "permissions": [
