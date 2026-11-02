@@ -1,4 +1,14 @@
-# Master KAI Koinos Node 0.1.1
+# Master KAI Koinos Node 0.1.2 (unreleased)
+
+Distribution no longer permanently blocks a queue when a balance read, mana check, signing step, or other preparation fails before any transaction can be submitted. Queued reburn and payouts remain intact for a later retry. Interrupted preparation is recoverable after restart; errors after the broadcast boundary still block duplicate payments.
+
+The transaction ID, chain ID and nonce are saved before transport. An uncertain result displays the original error and offers **Copy recovery details**, plus a transaction link when available. **Queued reburn** replaces the misleading **Reburned** cycle heading: closing a cycle allocates work and does not prove it was paid.
+
+Existing uncertain records without a transaction ID remain blocked. This update cannot establish whether an older attempt reached the blockchain, and does not automatically clear its accounting. Review the original error and chain evidence before any recovery or deliberate reset. No new recovery transaction, automatic rebroadcast, or automatic on-chain reconciliation is introduced.
+
+Requires KAI Core 0.7.3 or later. Publication still requires the established publisher's signature and exact package verification. Tests use disposable profiles and synthetic RPC/signers; they move no live funds.
+
+## Master KAI Koinos Node 0.1.1
 
 Fixes the disabled signing-key registration button after importing a wallet or migrating the Master chain. When this plugin's wallet is locked, the button now opens Wallet and explains how to unlock it before reviewing registration of the current node key. Unlocking immediately updates the registration action.
 

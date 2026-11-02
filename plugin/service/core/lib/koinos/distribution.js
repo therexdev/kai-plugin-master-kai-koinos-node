@@ -650,7 +650,8 @@ class DistributionEngine {
     const cfg = this.config();
     if (!cfg.enabled) return;
     const address = this.wallet.status().address;
-    if (address && this._readState(this._stateKey(this.chain.network().id, address)).inFlight) return;
+    const pending = address && this._readState(this._stateKey(this.chain.network().id, address)).inFlight;
+    if (pending && !this._neverBroadcast(pending)) return;
     const ms = cfg.pollMinutes * 60 * 1000;
     this.nextRunAt = Date.now() + ms;
     this._timer = setInterval(() => {
@@ -774,6 +775,10 @@ class DistributionEngine {
     return cmpSats(st.reburnOwed, "0") <= 0 && st.payouts.length === 0;
   }
 
+  _neverBroadcast(intent) {
+    return intent?.journalVersion === 1 && intent.phase === "preparing" && !intent.txId;
+  }
+
   async tick(trigger = "timer", { forceClose = false } = {}) {
     if (this._busy) return this.status();
     this._busy = true;
@@ -805,6 +810,14 @@ class DistributionEngine {
     const key = this._stateKey(networkId, address);
     const saved = this._readState(key);
     if (saved.inFlight) {
+      if (this._neverBroadcast(saved.inFlight)) {
+        // A crash before the durable broadcast boundary cannot have sent a
+        // transaction. Older records have no such proof and remain blocked.
+        saved.reconciledActions.push({ ...saved.inFlight, disposition: "not-broadcast", recoveredAt: Date.now() });
+        saved.inFlight = null;
+        this.state.set(key, saved);
+        return done("not-submitted", { message: "The previous attempt stopped before submission. All queued amounts are preserved; distribution can be retried." });
+      }
       this.stop();
       return done("tx-error", { message: this._uncertainMessage(saved.inFlight) });
     }
@@ -1223,9 +1236,12 @@ class DistributionEngine {
 
   _uncertainMessage(intent) {
     const name = intent.kind === "reburn" ? "Reburn" : `Payout to ${intent.address}`;
+    if (this._neverBroadcast(intent)) return `${name} stopped before submission. Check now to release the interrupted attempt while preserving all queued amounts.`;
     return `${name} has an unknown transaction result${intent.txId ? ` (${intent.txId})` : ""}. ` +
-      "Distribution is stopped to prevent a duplicate payment. Check Wallet History and the blockchain explorer before using Reset stats to discard the pending accounting. " +
-      "Already submitted funds cannot be undone.";
+      "Distribution is stopped to prevent a duplicate payment. The queued amounts have been preserved. " +
+      (intent.error ? `Original error: ${intent.error}. ` : "") +
+      (intent.txId ? "Check this transaction in Wallet History and the blockchain explorer. " : "No transaction ID was saved, so an empty Wallet History alone cannot establish that nothing was sent. Copy recovery details for review. ") +
+      "Reset Stats discards pending accounting; it cannot undo funds already submitted.";
   }
 
   // Persist intent before invoking a signer or transport. A process crash or a
@@ -1249,20 +1265,32 @@ class DistributionEngine {
     let txError = null;
     for (const action of plan.actions) {
       let tx;
+      const tracked = typeof this.chain.submitDistribution === "function";
       try {
         this.authorize();
         if (!this.config().enabled || this.wallet.status().address !== address || this._stateKey(this.chain.network().id, address) !== key) throw new Error("Distribution identity or settings changed; stopped.");
-        st.inFlight = { ...action, wallet: address, network: this.chain.network().id, startedAt: Date.now() };
+        st.inFlight = { ...action, wallet: address, network: this.chain.network().id, startedAt: Date.now(),
+          ...(tracked ? { journalVersion: 1, phase: "preparing" } : {}) };
         this.state.set(key, st);
         this._submitting = true;
-        if (action.kind === "reburn") {
+        if (tracked) {
+          tx = await this.chain.submitDistribution(this.wallet.signer, action, identity => {
+            this.authorize();
+            if (!this.config().enabled || this.wallet.status().address !== address || this._stateKey(this.chain.network().id, address) !== key) throw new Error("Distribution identity or settings changed; stopped.");
+            if (!/^0x1220[a-f0-9]{64}$/.test(identity?.txId || "") || !identity.chainId || !identity.nonce) throw new Error("Invalid distribution transaction identity");
+            const submitting = structuredClone(st);
+            submitting.inFlight = { ...submitting.inFlight, ...identity, phase: "broadcast" };
+            this.state.set(key, submitting);
+            Object.assign(st, submitting);
+          });
+        } else if (action.kind === "reburn") {
           tx = await this.chain.burn(this.wallet.signer, action.amountSat);
         } else {
           tx = await this.chain.transfer(this.wallet.signer, {
             to: action.address, amountSat: action.amountSat, token: "koin",
           });
         }
-        if (!tx?.txId || tx.reverted) throw new Error("A successful transaction submission could not be verified.");
+        if (!tx?.txId || tx.reverted || (tracked && tx.txId !== st.inFlight.txId)) throw new Error("A successful transaction submission could not be verified.");
         // Do not mutate the intent-bearing state until completion is durable.
         // If this write fails, the outer tick can only save the blocked state.
         const completed = structuredClone(st);
@@ -1281,8 +1309,18 @@ class DistributionEngine {
         executed.push({ ...action, txId: tx.txId });
       } catch (e) {
         this._submitting = false;
-        if (st.inFlight) {
-          if (tx?.txId) st.inFlight.txId = tx.txId;
+        if (st.inFlight && tracked && e.distributionNotBroadcast === true) {
+          const unsubmitted = structuredClone(st);
+          unsubmitted.reconciledActions.push({ ...unsubmitted.inFlight, error: String(e.message).slice(0, 1000),
+            disposition: "not-broadcast", recoveredAt: Date.now() });
+          unsubmitted.inFlight = null;
+          // Queue contents are unchanged. Failed durability still prevents a
+          // fresh send because the old intent is retained in memory and disk.
+          this.state.set(key, unsubmitted);
+          Object.assign(st, unsubmitted);
+          txError = `${action.kind === "reburn" ? "Reburn" : `Payout to ${action.address}`} was not submitted: ${String(e.message)}. Queued amounts are preserved; retry after resolving this error.`;
+        } else if (st.inFlight) {
+          if (tx?.txId && !st.inFlight.txId) st.inFlight.txId = tx.txId;
           st.inFlight.error = String(e.message).slice(0, 1000);
           this.state.set(key, st);
           this.stop();
@@ -1362,7 +1400,7 @@ class DistributionEngine {
       config: cfg,
       running: !!this._timer,
       nextRunAt: this.nextRunAt,
-      last: st?.inFlight && !this._submitting ? { time: st.inFlight.startedAt, trigger: "recovery", outcome: "tx-error",
+      last: st?.inFlight && !this._submitting ? { time: st.inFlight.startedAt, trigger: "recovery", outcome: this._neverBroadcast(st.inFlight) ? "not-submitted" : "tx-error",
         message: this._uncertainMessage(st.inFlight) } : this.last,
       derived,
       network: networkId,

@@ -278,7 +278,7 @@ class ChainService {
   // (or `vhpAddress` when given) via the PoB contract. On KCS-4 KOIN the
   // PoB contract pulls the tokens, so the same transaction first approves
   // exactly the burn amount (the pull consumes the allowance).
-  async burn(signer, amountSat, { vhpAddress } = {}) {
+  async burn(signer, amountSat, { vhpAddress, beforeBroadcast } = {}) {
     const address = signer.getAddress();
     if (cmpSats(amountSat, "0") <= 0) throw new Error("Burn amount must be positive");
     const { koin, mana } = await this.balances(address);
@@ -305,14 +305,15 @@ class ChainService {
         vhp_address: vhpAddress || address,
       });
       if (this.nonceCoordinator) return await this._coordinatedSend(tx, "burn");
-      await tx.send();
+      if (beforeBroadcast) await this._sendTracked(tx, beforeBroadcast);
+      else await tx.send();
       return await this._finalizeTx(tx);
     } catch (e) {
       throw rpcError(e);
     }
   }
 
-  async transfer(signer, { to, amountSat, token = "koin", assertContext: reviewedContext }) {
+  async transfer(signer, { to, amountSat, token = "koin", assertContext: reviewedContext, beforeBroadcast }) {
     if (reviewedContext !== undefined && typeof reviewedContext !== "function") throw new Error("Invalid wallet transfer context");
     const assertContext = reviewedContext || (() => {});
     assertContext();
@@ -333,14 +334,17 @@ class ChainService {
     const contract = await this._contract(token, { signer, provider });
     assertContext();
     try {
-      if (this.nonceCoordinator || reviewedContext) {
+      if (this.nonceCoordinator || reviewedContext || beforeBroadcast) {
         const tx = new Transaction({ signer, provider, options: { rcLimit } });
         await tx.pushOperation(contract.functions.transfer, { from: address, to: String(to).trim(), value: String(amountSat) });
         assertContext();
         if (this.nonceCoordinator) return await this._coordinatedSend(tx, "send", assertContext);
-        await tx.prepare(); assertContext();
-        await tx.sign(); assertContext();
-        await tx.send();
+        if (beforeBroadcast) await this._sendTracked(tx, beforeBroadcast, assertContext);
+        else {
+          await tx.prepare(); assertContext();
+          await tx.sign(); assertContext();
+          await tx.send();
+        }
         return await this._finalizeTx(tx);
       }
       const { transaction } = await contract.functions.transfer(
@@ -350,6 +354,47 @@ class ChainService {
       return await this._finalize(transaction);
     } catch (e) {
       throw rpcError(e);
+    }
+  }
+
+  // Distribution must distinguish a local/preflight failure from an uncertain
+  // broadcast. Persist the exact transaction identity BEFORE any transport.
+  // The callback is internal native code, never a renderer-supplied function.
+  async _sendTracked(tx, beforeBroadcast, assertContext = () => {}) {
+    if (typeof beforeBroadcast !== "function") throw new Error("Invalid distribution journal callback");
+    await tx.prepare(); assertContext();
+    await tx.sign(); assertContext();
+    if (!tx.transaction.id || !tx.transaction.signatures?.length) throw new Error("Distribution transaction was not signed");
+    await beforeBroadcast({ txId: tx.transaction.id, chainId: tx.transaction.header.chain_id,
+      nonce: tx.transaction.header.nonce });
+    assertContext();
+    // With signatures present, koilib sends this envelope without signing a
+    // replacement. Neither keys nor signatures are returned to the renderer.
+    const receipt = await tx.send();
+    if (receipt?.reverted) throw new Error("Distribution transaction reverted. Verify its recorded transaction ID before retrying.");
+  }
+
+  async submitDistribution(signer, action, beforeBroadcast) {
+    let broadcastAttempted = false;
+    try {
+      if (this.nonceCoordinator) throw new Error("Distribution requires its own tracked submission path");
+      if (typeof beforeBroadcast !== "function") throw new Error("Distribution journal is required");
+      const record = async identity => {
+        await beforeBroadcast(identity);
+        // Any failure after this boundary remains uncertain. An RPC error,
+        // timeout, or rejected response is never proof that nothing was sent.
+        broadcastAttempted = true;
+      };
+      if (action.kind === "reburn") return await this.burn(signer, action.amountSat, { beforeBroadcast: record });
+      if (action.kind === "payout") return await this.transfer(signer, {
+        to: action.address, amountSat: action.amountSat, token: "koin", beforeBroadcast: record,
+      });
+      throw new Error("Unknown distribution action");
+    } catch (error) {
+      const result = rpcError(error);
+      // Set from the actual transport boundary, never from error-message text.
+      result.distributionNotBroadcast = !broadcastAttempted;
+      throw result;
     }
   }
 
