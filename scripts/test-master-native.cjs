@@ -6,6 +6,8 @@ const crypto = require("node:crypto"), assert = require("node:assert/strict");
 const root = path.resolve(__dirname, ".."), coreRoot = path.resolve(process.env.KAI_CORE_SOURCE || path.join(root, "../kai-core"));
 const { _electron: electron } = require(path.join(coreRoot, "node_modules/playwright-core"));
 const electronPath = require(path.join(coreRoot, "node_modules/electron"));
+// Test-only helper: retry lost inspector results only for read-only observations.
+const { waitForInspectorObservation } = require(path.join(coreRoot, "scripts/foundation/inspector-observation"));
 const { signingPayload, BINARY, verifyPackage } = require(path.join(coreRoot, "core/lib/plugins/package"));
 const id = "kai.master-kai-koinos-node", otherId = "kai.koinos-node";
 const views = ["dashboard", "wallet", "fund", "burn", "node", "distribution", "master-api", "returns", "settings"];
@@ -56,11 +58,7 @@ async function main() {
     const renderer = global.__foundationHost.renderer(id); if (!renderer) throw Error("Master Node renderer is unavailable");
     return renderer.executeJavaScript(expression, true);
   }, { id, expression });
-  const until = async (predicate, message, timeout = 30000) => {
-    const deadline = Date.now() + timeout;
-    do { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 100)); } while (Date.now() < deadline);
-    throw Error(message);
-  };
+  const until = (predicate, message, timeoutMs = 30000) => waitForInspectorObservation(predicate, { message, timeoutMs });
   const check = async (name, task) => {
     try { await task(); report.checks.push(name); console.log("PASS", name); }
     catch (error) { report.failures.push({ name, error: error.stack || String(error) }); console.error("FAIL", name, error.message); }

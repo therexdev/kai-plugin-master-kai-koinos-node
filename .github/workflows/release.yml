@@ -50,6 +50,7 @@ jobs:
           repository: therexdev/kai-plugin-koinos-node
           ref: 89e074972b176ce2d4466d01444a79e767656489
           path: .ordinary-node
+          sparse-checkout: plugin
           persist-credentials: false
       - name: Prepare the reviewed Electron host
         working-directory: .test-core
