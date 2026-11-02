@@ -1,4 +1,4 @@
-# Master KAI Koinos Node 0.1.2 (unreleased)
+# Master KAI Koinos Node 0.1.2
 
 Distribution no longer permanently blocks a queue when a balance read, mana check, signing step, or other preparation fails before any transaction can be submitted. Queued reburn and payouts remain intact for a later retry. Interrupted preparation is recoverable after restart; errors after the broadcast boundary still block duplicate payments.
 
@@ -8,7 +8,7 @@ The transaction ID, chain ID and nonce are saved before transport. An uncertain 
 
 Existing uncertain records without a transaction ID remain blocked. This update cannot establish whether an older attempt reached the blockchain, and does not automatically clear its accounting. Review the original error and chain evidence before any recovery or deliberate reset. No new recovery transaction, automatic rebroadcast, or automatic on-chain reconciliation is introduced.
 
-Requires KAI Core 0.7.3 or later. Publication still requires the established publisher's signature and exact package verification. Tests use disposable profiles and synthetic RPC/signers; they move no live funds.
+Requires KAI Core 0.7.3 or later. The signed update uses the established publisher identity. Tests use disposable profiles and synthetic RPC/signers; they move no live funds.
 
 ## Master KAI Koinos Node 0.1.1
 

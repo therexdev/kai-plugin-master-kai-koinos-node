@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "asset": "kai-plugin-master-kai-koinos-node-0.1.2.kaiplugin",
+  "bytes": 27293842,
+  "sha256": "49dda81bf3a8042212c4d6a5b20300860870fe949d65ccb1b6de67bc6c10724c",
+  "parts": [
+    {
+      "file": "kai-plugin-master-kai-koinos-node-0.1.2.kaiplugin.part001",
+      "bytes": 6302449,
+      "sha256": "bde13da4bb12ac866f848c64d463b67920780f435201b2c187d7555086718e08"
+    },
+    {
+      "file": "kai-plugin-master-kai-koinos-node-0.1.2.kaiplugin.part002",
+      "bytes": 6291456,
+      "sha256": "852485a983370f0728ca43bf49c593a3750e3f18e8d9e0fe3dff3cb2cebfb4a5"
+    },
+    {
+      "file": "kai-plugin-master-kai-koinos-node-0.1.2.kaiplugin.part003",
+      "bytes": 6291456,
+      "sha256": "76003bb6be747523a5eb10e1e87af63fef40d0f2bedceb07af7f942c180bf09c"
+    },
+    {
+      "file": "kai-plugin-master-kai-koinos-node-0.1.2.kaiplugin.part004",
+      "bytes": 6291456,
+      "sha256": "617aa03c1eaf61a06b3d00dfe9898bceb32e19813e52a2404c46921364010e02"
+    },
+    {
+      "file": "kai-plugin-master-kai-koinos-node-0.1.2.kaiplugin.part005",
+      "bytes": 2117025,
+      "sha256": "ffa27ea285a71728338256ad7f6a5ec1a99dccf3b25be99c2f7ab462b8d461c2"
+    }
+  ]
+}
