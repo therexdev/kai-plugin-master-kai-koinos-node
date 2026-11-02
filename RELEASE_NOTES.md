@@ -1,8 +1,10 @@
-# Master KAI Koinos Node 0.1.2
+# Master KAI Koinos Node 0.1.3
 
-## 0.1.3 — shared interface language (unreleased)
+Follows the language saved in Core Settings, including changes to open views. Supports English, Spanish, Brazilian Portuguese, French and German with offline catalogs. Core owns the first-run choice; plugin content and identifiers stay literal. Requires Core 0.7.17 or newer.
 
-Follows the language saved in Core Settings, including changes to open views. Supports English, Spanish, Brazilian Portuguese, French and German with offline catalogs. Core owns the first-run choice; plugin content and identifiers stay literal. Requires Core 0.7.17 or newer. Publish a newly signed package and matching catalog minimum only after the Core release; existing release assets remain unchanged.
+## Previous release
+
+Master KAI Koinos Node 0.1.2
 
 Distribution no longer permanently blocks a queue when a balance read, mana check, signing step, or other preparation fails before any transaction can be submitted. Queued reburn and payouts remain intact for a later retry. Interrupted preparation is recoverable after restart; errors after the broadcast boundary still block duplicate payments.
 
