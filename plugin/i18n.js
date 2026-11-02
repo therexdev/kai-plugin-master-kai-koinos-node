@@ -28,12 +28,18 @@
   let locale = detect(root.navigator?.languages || [root.navigator?.language]);
   const descriptors = new Map();
   const normalizeText = text => String(text).replace(/\s+/g, ' ').trim();
-  const interpolate = (text, values = []) => text.replace(/\{(\d+)\}/g, (match, n) => n < values.length ? String(values[n]) : match);
+  const interpolate = (text, values = [], lang = locale) => text.replace(/\{(\d+)\}/g, (match, n) => {
+    if (n >= values.length) return match;
+    const value = values[n];
+    return value?.literal === true ? String(value.value ?? '') : value && Array.isArray(value.values) ? translate(value.source, value.values, lang) : String(value ?? '');
+  });
   const translate = (source, values = [], lang = locale) => {
+    if (source?.literal === true) return String(source.value ?? '');
+    if (source && Array.isArray(source.values)) { values = source.values; source = source.source; }
     const key = normalizeText(source);
     const table = root.KaiLocaleCatalogs?.[lang];
     const translated = table && Object.hasOwn(table, key) ? table[key] : key;
-    return interpolate(translated, values);
+    return interpolate(translated, values, lang);
   };
   const preserveSpace = (source, translated) => source.match(/^\s*/)[0] + translated + source.match(/\s*$/)[0];
   const remember = (node, source, attr = null, values = []) => {
@@ -62,6 +68,12 @@
   }
   function message(strings, ...values) {
     return { source: strings.reduce((text, part, i) => text + part + (i < values.length ? `{${i}}` : ''), ''), values };
+  }
+  function getText(node) {
+    const children = Array.from(node?.childNodes || []);
+    const text = children.filter(child => child.nodeType === 3);
+    const entry = descriptors.get(node)?.get(null) || (text.length === 1 && children.every(child => child.nodeType === 3 || child.nodeType === 8) && descriptors.get(text[0])?.get(null));
+    return entry ? { source: entry.source, values: entry.values } : { literal: true, value: node?.textContent || '' };
   }
   function setLanguage(value) {
     const next = normalize(value);
@@ -107,7 +119,11 @@
     for (const el of nodes) {
       if (el.hasAttribute('data-i18n')) remember(el, el.getAttribute('data-i18n'));
       if (el.hasAttribute('data-i18n-attrs')) {
-        try { for (const [attr, source] of Object.entries(JSON.parse(el.getAttribute('data-i18n-attrs')))) remember(el, source, attr); } catch { /* malformed markup */ }
+        try { for (const [attr, source] of Object.entries(JSON.parse(el.getAttribute('data-i18n-attrs')))) {
+          if (!['title', 'placeholder', 'aria-label'].includes(attr)) continue;
+          if (source && Array.isArray(source.values)) remember(el, source.source, attr, source.values);
+          else remember(el, source, attr);
+        } } catch { /* malformed markup */ }
       }
     }
     const walker = root.document.createTreeWalker(container, 128);
@@ -117,12 +133,33 @@
     }
   }
   const escapeHTML = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  // Opt in dynamic interface labels without interpreting account names, model
+  // output, saved documents, or other interpolated values as translation keys.
+  function content(source) {
+    if (source?.literal === true) return escapeHTML(source.value ?? '');
+    const entry = source && Array.isArray(source.values) ? source : { source: String(source ?? ''), values: [] };
+    if (!entry.source) return '';
+    return '<!--kai-i18n:' + encodeURIComponent(JSON.stringify(entry)) + '-->' + escapeHTML(preserveSpace(entry.source, translate(entry.source, entry.values))) + '<!--/kai-i18n-->';
+  }
+  function setAttr(node, attr, source) {
+    if (!node || !['title', 'placeholder', 'aria-label'].includes(attr)) return;
+    if (source?.literal === true || source == null || source === '') {
+      descriptors.get(node)?.delete(attr); node.setAttribute(attr, String(source?.value ?? source ?? '')); return;
+    }
+    const entry = source && Array.isArray(source.values) ? source : { source: String(source ?? ''), values: [] };
+    remember(node, entry.source, attr, entry.values);
+  }
   function html(strings, ...values) {
     if (typeof strings === 'string') strings = [strings];
     const source = strings.reduce((text, part, i) => text + part + (i < values.length ? `KAI_I18N_SLOT_${i}_END` : ''), '');
     const replaceSlots = text => text.replace(/KAI_I18N_SLOT_(\d+)_END/g, (_, i) => String(values[i] ?? ''));
     if (!root.document) return replaceSlots(source);
     const decode = text => { const t = root.document.createElement('template'); t.innerHTML = text; return t.content.textContent; };
+    const nested = value => {
+      const match = /^<!--kai-i18n:([^>]+)-->([^<]*)(?:<!--\/kai-i18n-->)?$/.exec(String(value ?? ''));
+      if (!match) return null;
+      try { const entry = JSON.parse(decodeURIComponent(match[1])); return typeof entry.source === 'string' && Array.isArray(entry.values) ? entry : null; } catch { return null; }
+    };
     const stack = [];
     const result = source.replace(/<!--[\s\S]*?-->|<(?:[^>"']|"[^"]*"|'[^']*')*>|[^<]+|</g, token => {
       if (token.startsWith('<!--')) return token;
@@ -135,8 +172,12 @@
         const attrs = {};
         token = token.replace(/\b(title|placeholder|aria-label)=("[^"]*"|'[^']*')/g, (attribute, name, quoted) => {
           const value = quoted.slice(1, -1);
-          if (/KAI_I18N_SLOT_\d+_END/.test(value)) return attribute;
-          attrs[name] = decode(value); return name + '="' + escapeHTML(translate(attrs[name])) + '"';
+          const params = [];
+          // Attribute prose is part of the template; slots remain literal data.
+          if (!/[A-Za-z]{2}/.test(value.replace(/KAI_I18N_SLOT_\d+_END/g, ''))) return attribute;
+          const key = decode(value).replace(/KAI_I18N_SLOT_(\d+)_END/g, (_, i) => { params.push(decode(String(values[i] ?? ''))); return `{${params.length - 1}}`; });
+          attrs[name] = params.length ? { source: key, values: params } : key;
+          return name + '="' + escapeHTML(translate(key, params)) + '"';
         });
         if (Object.keys(attrs).length) token = token.replace(/(\/?>)$/, ' data-i18n-attrs="' + escapeHTML(JSON.stringify(attrs)) + '"$1');
         return token;
@@ -145,9 +186,9 @@
       if (!/[A-Za-z]{2}/.test(token.replace(/KAI_I18N_SLOT_\d+_END/g, ''))) return token;
       // Do not reinterpret an interpolated child component as prose.
       const slots = [...token.matchAll(/KAI_I18N_SLOT_(\d+)_END/g)];
-      if (slots.some(([, i]) => /<[a-z!\/]/i.test(String(values[i] ?? '')))) return token;
+      if (slots.some(([, i]) => /<[a-z!\/]/i.test(String(values[i] ?? '')) && !nested(values[i]))) return token;
       const params = [];
-      const key = decode(token).replace(/KAI_I18N_SLOT_(\d+)_END/g, (_, i) => { params.push(decode(String(values[i] ?? ''))); return `{${params.length - 1}}`; });
+      const key = decode(token).replace(/KAI_I18N_SLOT_(\d+)_END/g, (_, i) => { params.push(nested(values[i]) || decode(String(values[i] ?? ''))); return `{${params.length - 1}}`; });
       const marker = '<!--kai-i18n:' + encodeURIComponent(JSON.stringify({ source: key, values: params })) + '-->';
       return marker + escapeHTML(preserveSpace(key, translate(key, params)));
     });
@@ -168,6 +209,6 @@
     observer.observe(root.document.body, { childList: true, subtree: true });
   }
   if (root.document?.body) start();
-  return { languages, normalize, detect, t: translate, html, message, literal: value => ({ literal: true, value }), setText, setLanguage, registerStatic, registerMarkers,
+  return { languages, normalize, detect, t: translate, html, content, message, literal: value => ({ literal: true, value }), getText, setText, setAttr, setLanguage, registerStatic, registerMarkers,
     get language() { return locale; } };
 });

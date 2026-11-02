@@ -1,6 +1,6 @@
 {
   "name": "kai-plugin-master-kai-koinos-node",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "node scripts/vendor-dependencies.js && node scripts/master-block-store-verify.js",
     "build:runtime": "node scripts/master-block-store-build.js",
     "verify:runtime": "node scripts/master-block-store-verify.js",
-    "test:native": "node scripts/test-master-native.cjs"
+    "test:native": "node scripts/test-master-native.cjs",
+    "build:locales": "node scripts/build-locales.js"
   },
   "dependencies": {
     "@noble/hashes": "1.8.0",

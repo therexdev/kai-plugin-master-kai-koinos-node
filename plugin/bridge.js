@@ -33,10 +33,10 @@
       body.className = "modal-body";
       var p = document.createElement("p");
       p.className = "small muted";
-      p.textContent = "Your wallet password is required whenever funds leave your wallet.";
+      KaiI18n.setText(p, "Your wallet password is required whenever funds leave your wallet.");
       var input = document.createElement("input");
       input.type = "password";
-      input.placeholder = "Wallet password";
+      KaiI18n.setAttr(input, "placeholder", "Wallet password");
       input.autocomplete = "current-password";
       input.style.width = "100%";
       input.style.marginTop = "10px";
@@ -50,18 +50,18 @@
       var dismiss = document.createElement("button");
       dismiss.type = "button";
       dismiss.className = "node-modal-close";
-      dismiss.setAttribute("aria-label", "Cancel wallet approval");
+      KaiI18n.setAttr(dismiss, "aria-label", "Cancel wallet approval");
       dismiss.textContent = "×";
       dismiss.addEventListener("click", function () { done(null); });
       heading.appendChild(h);
       heading.appendChild(dismiss);
       var cancel = document.createElement("button");
       cancel.className = "btn";
-      cancel.textContent = "Cancel";
+      KaiI18n.setText(cancel, "Cancel");
       cancel.addEventListener("click", function () { done(null); });
       var okBtn = document.createElement("button");
       okBtn.className = "btn primary";
-      okBtn.textContent = "Confirm";
+      KaiI18n.setText(okBtn, "Confirm");
       okBtn.addEventListener("click", function () { done(input.value); });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") done(input.value);
@@ -176,7 +176,7 @@
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
-    if (text != null) e.textContent = text;
+    if (text != null) KaiI18n.setText(e, text?.source ? text : KaiI18n.literal(text));
     return e;
   }
 
@@ -196,7 +196,7 @@
     if (onCancel) {
       var dismiss = el("button", "node-modal-close", "×");
       dismiss.type = "button";
-      dismiss.setAttribute("aria-label", "Cancel folder selection");
+      KaiI18n.setAttr(dismiss, "aria-label", "Cancel folder selection");
       dismiss.addEventListener("click", onCancel);
       heading.appendChild(dismiss);
       box.addEventListener("keydown", function (event) { if (event.key === "Escape") { event.preventDefault(); onCancel(); } });
@@ -243,9 +243,7 @@
 
       var facts = el("p", "small muted");
       var refreshFacts = function (free) {
-        facts.textContent = free == null
-          ? "Free space on that drive: unknown"
-          : "Free space on that drive: " + fmtBytes(free);
+        KaiI18n.setText(facts, (free == null ? "Free space on that drive: unknown" : KaiI18n.message`Free space on that drive: ${fmtBytes(free)}`));
       };
       refreshFacts(info.freeBytes);
       m.body.appendChild(facts);
@@ -268,11 +266,11 @@
         m.body.appendChild(typed);
       }
 
-      var change = el("button", "btn", shell() ? "Choose a different folder…" : "Check this folder");
+      var change = el("button", "btn", (shell() ? KaiI18n.message(["Choose a different folder…"]) : KaiI18n.message(["Check this folder"])));
       change.id = "kai-dd-change";
       var confirm = el("button", "btn primary", opts.confirmLabel || "Use this folder");
       confirm.id = "kai-dd-confirm";
-      var cancel = el("button", "btn", "Cancel");
+      var cancel = el("button", "btn", KaiI18n.message(["Cancel"]));
       cancel.id = "kai-dd-cancel";
 
       var vet = function (candidate) {
@@ -383,23 +381,22 @@
     if (!m) return;
     var line = el("p", "small");
     line.id = "kai-move-phase";
-    line.textContent = "Stopping the node…";
+    KaiI18n.setText(line, "Stopping the node…");
     var bar = el("div", "small mono");
     bar.id = "kai-move-bar";
     bar.style.marginTop = "8px";
     var note = el("p", "small muted");
     note.style.marginTop = "10px";
-    note.textContent = "Every file is copied, then read back and checked against the original before anything is removed. " +
-      "Safe to leave running: if this is interrupted, your data stays exactly where it is.";
+    KaiI18n.setText(note, KaiI18n.message`Every file is copied, then read back and checked against the original before anything is removed. Safe to leave running: if this is interrupted, your data stays exactly where it is.`);
     m.body.appendChild(line);
     m.body.appendChild(bar);
     m.body.appendChild(note);
 
-    var cancel = el("button", "btn", "Cancel");
+    var cancel = el("button", "btn", KaiI18n.message(["Cancel"]));
     cancel.id = "kai-move-cancel";
     cancel.addEventListener("click", function () {
       cancel.disabled = true;
-      cancel.textContent = "Cancelling…";
+      KaiI18n.setText(cancel, "Cancelling…");
       invoke("node:moveDataDirCancel", {});
     });
     m.actions.appendChild(cancel);
@@ -420,13 +417,13 @@
         line.textContent = PHASES[s.phase] || s.phase;
         if (s.phase === "copying" && s.totalBytes) {
           var pct = Math.min(100, Math.round((s.copiedBytes / s.totalBytes) * 100));
-          bar.textContent = fmtBytes(s.copiedBytes) + " of " + fmtBytes(s.totalBytes) + "  (" + pct + "%)";
+          KaiI18n.setText(bar, KaiI18n.message`${fmtBytes(s.copiedBytes)} of ${fmtBytes(s.totalBytes)}  (${pct}%)`);
         }
         // The checksum pass re-reads everything, so it needs its own bar —
         // without one it looks like the move has hung at 100%.
         if (s.phase === "checksumming" && s.totalBytes) {
           var cpct = Math.min(100, Math.round((s.checkedBytes / s.totalBytes) * 100));
-          bar.textContent = fmtBytes(s.checkedBytes) + " of " + fmtBytes(s.totalBytes) + " checked  (" + cpct + "%)";
+          KaiI18n.setText(bar, KaiI18n.message`${fmtBytes(s.checkedBytes)} of ${fmtBytes(s.totalBytes)} checked  (${cpct}%)`);
         }
         if (s.running) return;
         clearInterval(poll);
@@ -449,7 +446,7 @@
         return window.kai.dialogs.alert(r.error + "\n\nYour original data was left exactly where it was.", { title: "Chain data move did not start" });
       }
     });
-    if (info && info.sizeBytes) bar.textContent = "0 of " + fmtBytes(info.sizeBytes);
+    if (info && info.sizeBytes) KaiI18n.setText(bar, KaiI18n.message`0 of ${fmtBytes(info.sizeBytes)}`);
   }
 
   /*
@@ -460,9 +457,9 @@
   function attachChangeButton() {
     var open = document.getElementById("n-open");
     if (!open || document.getElementById("kai-n-move")) return;
-    var btn = el("button", "btn ghost", "Change data folder");
+    var btn = el("button", "btn ghost", KaiI18n.message(["Change data folder"]));
     btn.id = "kai-n-move";
-    btn.title = "Move the chain data to another drive";
+    KaiI18n.setAttr(btn, "title", "Move the chain data to another drive");
     btn.addEventListener("click", onChangeDataFolder);
     open.parentNode.insertBefore(btn, open.nextSibling);
   }
@@ -490,7 +487,7 @@
     if (!t) {
       t = el("div", "tile");
       t.id = id;
-      t.appendChild(el("div", "t-label", label));
+      t.appendChild(el("div", "t-label", KaiI18n.message([label])));
       t.appendChild(el("div", "t-value", ""));
       t.appendChild(el("div", "t-sub", ""));
       host.appendChild(t);
@@ -498,7 +495,7 @@
     // textContent throughout: these are numbers and short phrases, and none of
     // it has any business being parsed as markup.
     t.childNodes[1].textContent = value;
-    t.childNodes[2].textContent = sub || "";
+    KaiI18n.setText(t.childNodes[2], sub || "");
   }
 
   /*
@@ -520,7 +517,7 @@
       card = el("div", "card");
       card.id = "kai-value-card";
       var head = el("div", "row spread");
-      head.appendChild(el("h2", null, "\uD83C\uDFE0 Node value"));
+      head.appendChild(el("h2", null, KaiI18n.message(["\uD83C\uDFE0 Node value"])));
       var note = el("span", "muted small");
       note.id = "kai-value-note";
       head.appendChild(note);
@@ -539,12 +536,12 @@
     var price = (data && data.price) || {};
 
     var priceSub = price.usdPerKoin != null
-      ? "KOIN + VHP at " + usd(price.usdPerKoin) + " per KOIN"
+      ? KaiI18n.message`KOIN + VHP at ${usd(price.usdPerKoin)} per KOIN`
       : "waiting for a price";
     vtile(grid, "kai-v-total", "Node value", usd(v.nodeValueUsd), priceSub);
 
     var earnSub = v.basis === "measured"
-      ? "from " + v.daysTracked + " day" + (v.daysTracked === 1 ? "" : "s") + " measured"
+      ? KaiI18n.message`from ${v.daysTracked} measured days`
       : "not enough history yet";
     vtile(grid, "kai-v-daily", "Est. daily", usd(v.dailyUsd), earnSub);
     vtile(grid, "kai-v-weekly", "Est. weekly", usd(v.weeklyUsd), earnSub);
@@ -555,14 +552,14 @@
     var bits = [];
     if (price.usdPerKoin != null) {
       bits.push("Uniswap vKOIN/USDT");
-      if (price.stale) bits.push("price " + Math.round((price.ageMs || 0) / 60000) + " min old");
+      if (price.stale) bits.push(KaiI18n.message`price ${Math.round((price.ageMs || 0) / 60000)} min old`);
     } else if (price.error) {
-      bits.push("no price: " + price.error);
+      bits.push(KaiI18n.message`no price: ${price.error}`);
     } else if (price.pending) {
-      bits.push("fetching price\u2026");
+      bits.push(KaiI18n.message`fetching price…`);
     }
-    if (v.basis === "measured") bits.push("estimates, not a forecast");
-    note.textContent = bits.join(" \u00B7 ");
+    if (v.basis === "measured") bits.push(KaiI18n.message`estimates, not a forecast`);
+    KaiI18n.setText(note, KaiI18n.message([bits.map((_, i) => `{${i}}`).join(" · ")], ...bits));
   }
 
   // Reachable for tests, which cannot drive a live Ethereum quote.
@@ -688,7 +685,7 @@
       m.body.appendChild(warn);
     }
 
-    var copy = el("button", "btn", "Copy address");
+    var copy = el("button", "btn", KaiI18n.message(["Copy address"]));
     copy.addEventListener("click", function () {
       // invoke() resolves {ok:false} when the clipboard write is refused
       // rather than rejecting, so saying "copied" unconditionally would be a
@@ -699,7 +696,7 @@
         else window.toast("Could not copy — scan the code instead", "bad");
       });
     });
-    var done = el("button", "btn primary", "Done");
+    var done = el("button", "btn primary", KaiI18n.message(["Done"]));
     done.addEventListener("click", m.close);
     m.actions.appendChild(copy);
     m.actions.appendChild(done);
@@ -715,7 +712,7 @@
       if (document.getElementById(target.id)) return;
       var anchor = document.getElementById(target.afterButton);
       if (!anchor || !anchor.parentNode) return;           // that view is not painted
-      var btn = el("button", "btn ghost", "QR Code");
+      var btn = el("button", "btn ghost", KaiI18n.message(["QR Code"]));
       btn.id = target.id;
       btn.addEventListener("click", function () { showQr(target); });
       anchor.parentNode.insertBefore(btn, anchor.nextSibling);

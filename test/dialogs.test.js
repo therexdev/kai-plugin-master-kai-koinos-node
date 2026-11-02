@@ -1,4 +1,5 @@
 "use strict";
+const localeFixture = require("./i18n-fixture");
 const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const read = file => fs.readFileSync(path.join(__dirname, "../plugin", file), "utf8");
 const bridge = read("bridge.js"), renderer = read("renderer.js");
@@ -20,7 +21,7 @@ function dom() { const root = new Element(); return { root, document: { getEleme
 
 test("closing the wallet-password popup cancels without sending a financial RPC", async () => {
   const { root, document } = dom(), calls = [];
-  const context = vm.createContext({ document, rpc: async (...args) => { calls.push(args); return { ok: true }; }, OUTBOUND: { "chain:send": "Send KOIN" } });
+  const context = vm.createContext({ KaiI18n: localeFixture,  document, rpc: async (...args) => { calls.push(args); return { ok: true }; }, OUTBOUND: { "chain:send": "Send KOIN" } });
   vm.runInContext(between(bridge, "  function askPassword(", "  const READ_CHANNELS") + between(bridge, "  function invoke(", "  // ---- events:"), context);
   const result = context.invoke("chain:send", { to: "destination", amount: "1" });
   const password = root.find(el => el.tag === "input"); password.value = "synthetic-secret";
@@ -34,7 +35,7 @@ test("closing the wallet-password popup cancels without sending a financial RPC"
 
 test("folder popup close and Escape settle as cancellation without changing a path", async () => {
   const { root, document } = dom();
-  const context = vm.createContext({ document, shell: () => ({}), fmtBytes: String, invoke: () => { throw Error("Cancel cannot change the node"); } });
+  const context = vm.createContext({ KaiI18n: localeFixture,  document, shell: () => ({}), fmtBytes: String, invoke: () => { throw Error("Cancel cannot change the node"); } });
   vm.runInContext(between(bridge, "  function el(", "  /*\n   * Quick sync"), context);
   const result = context.askFolder({ path: "/node", freeBytes: 1 }, {});
   root.find(el => el.className === "node-modal-close").emit("click");
@@ -46,7 +47,7 @@ test("folder popup close and Escape settle as cancellation without changing a pa
 
 test("Node form close never approves an action and required backup acknowledgement remains required", () => {
   const { root, document } = dom(); let approved = false;
-  const context = vm.createContext({ document, $: (selector, parent = root) => selector === "#modal-root" ? root : parent.find(el => el.className === selector.slice(1)), KaiI18n: { html: (parts, ...args) => typeof parts === "string" ? parts : parts.map((part, i) => part + (args[i] ?? "")).join(""), setText: (node, text) => { node.textContent = text; } }, esc: String });
+  const context = vm.createContext({ document, $: (selector, parent = root) => selector === "#modal-root" ? root : parent.find(el => el.className === selector.slice(1)), KaiI18n: localeFixture, esc: String });
   vm.runInContext(between(renderer, "function showModal(", "function busyButton("), context);
   context.showModal({ title: "Send KOIN", body: "Review recipient", actions: [{ label: "Send", onClick: () => { approved = true; } }] });
   root.find(el => el.className === "node-modal-close").emit("click");
@@ -59,7 +60,7 @@ test("Node form close never approves an action and required backup acknowledgeme
 
 test("failed data-folder change awaits the trusted alert and preserves its error", async () => {
   const pending = deferred(), alerts = [], calls = [];
-  const context = vm.createContext({ window: { kai: { dialogs: { alert: (...args) => { alerts.push(args); return pending.promise; } } } }, askFolder: async () => "/new", invoke: async (channel, input) => { calls.push([channel, input]); return channel === "node:dataDir" ? { ok: true, data: { hasData: false, path: "/old" } } : { ok: false, error: "Folder is not writable" }; } });
+  const context = vm.createContext({ KaiI18n: localeFixture,  window: { kai: { dialogs: { alert: (...args) => { alerts.push(args); return pending.promise; } } } }, askFolder: async () => "/new", invoke: async (channel, input) => { calls.push([channel, input]); return channel === "node:dataDir" ? { ok: true, data: { hasData: false, path: "/old" } } : { ok: false, error: "Folder is not writable" }; } });
   vm.runInContext(between(bridge, "  function onChangeDataFolder()", "  /** Run the move"), context);
   let settled = false;
   const result = context.onChangeDataFolder().then(() => { settled = true; });

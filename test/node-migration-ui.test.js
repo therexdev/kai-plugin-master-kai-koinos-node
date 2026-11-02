@@ -1,4 +1,5 @@
 "use strict";
+const localeFixture = require("./i18n-fixture");
 const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const { createController, bytes } = require("../plugin/node-migration");
 const review = changes => ({ available: true, previewId: "native-review-id", network: "mainnet", source: { root: "/alpha/node/mainnet", basedir: "/alpha/node/mainnet/basedir" }, destination: { root: "/plugin/node/mainnet", basedir: "/plugin/node/mainnet/basedir" }, bytes: 1024, files: 2, mode: "move", resumable: false, ...changes });
@@ -102,7 +103,7 @@ test("a rejected preview settles all pending labels and keeps retry and review a
     if (channel === "node:profileMigrationStatus") return { ok: true, data: { phase: "idle" } };
     if (fail) return pending.promise;
     return { ok: true, data: review() };
-  });
+  }, localeFixture);
   const get = suffix => nodes.get(`node-migration-${suffix}`);
   try {
     const opening = controller.open(); await new Promise(resolve => setImmediate(resolve));

@@ -1,4 +1,5 @@
 "use strict";
+const localeFixture = require("./i18n-fixture");
 const test = require("node:test"), assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const renderer = fs.readFileSync(path.join(__dirname, "../plugin/renderer.js"), "utf8");
@@ -13,7 +14,7 @@ function fixture() {
   const S = { walletStage: "locked", registeringKey: false, node: { isRunning: true },
     producer: { mode: "local", address: "synthetic-address", filePublicKey: "current-key", registeredPublicKey: "old-key", matches: false } };
   const context = vm.createContext({ S, $: selector => nodes.get(selector),
-    KaiI18n: { setText: (node, text) => { node.textContent = text; } },
+    KaiI18n: localeFixture,
     switchView: view => views.push(view), renderWalletView() {}, renderBurnView() {},
     refreshNode: async () => {}, txToast: (...args) => transactions.push(args), toast: (...args) => notices.push(args),
     call: async (...args) => { calls.push(args); return { exists: true, unlocked: false }; },

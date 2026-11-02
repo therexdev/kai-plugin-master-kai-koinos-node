@@ -1,4 +1,14 @@
-# Master KAI Koinos Node 0.1.4
+# Master KAI Koinos Node 0.1.5
+
+Completes translation coverage for menus, forms, dialogs, tooltips and changing status text in English, Spanish, Brazilian Portuguese, French and German. Open views follow the language saved in Core Settings, including labels created after the view loads. Drafts, names, code and other user content remain intact.
+
+Includes readable offline catalogs, reproducible generation, contributor documentation and regression tests for live language changes. Requires Core 0.7.17 or newer.
+
+Includes the Node API startup fix for large producer caches from 0.1.4.
+
+## Previous release
+
+Master KAI Koinos Node 0.1.4
 
 Fixes Node API startup with a full producer-history cache. The public cache has a bounded 16 MiB allowance, reuses its guarded store when API settings are saved, and no longer creates a backup on every indexing refresh. Settings and financial journals retain their existing protections. Existing cache files and backups are preserved.
 

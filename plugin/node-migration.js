@@ -79,10 +79,11 @@
       observe(node) { state.external = node?.control?.reason === "managed-elsewhere"; emit(); },
       dispose() { disposed = true; epoch++; if (timer !== null) clearTimer(timer); } };
   }
-  function mount(document, invoke) {
+  function mount(document, invoke, locale = root.KaiI18n) {
+    const KaiI18n = locale;
     const dialog = document.getElementById("node-migration-dialog"); if (!dialog) return null;
     const $ = id => document.getElementById(`node-migration-${id}`);
-    const text = (id, value) => { const node = $(id), next = String(value ?? ""); if (node.textContent !== next) node.textContent = next; };
+    const text = (id, value) => { KaiI18n.setText($(id), value); };
     let focusBefore = null;
     const controller = createController({ call: async (channel, payload) => { const reply = await invoke(channel, payload); if (!reply?.ok) throw Error(reply?.error || "Node migration is unavailable."); return reply.data; },
       onComplete: result => document.dispatchEvent(new root.CustomEvent("kai-node-migration-complete", { detail: result })),
@@ -94,8 +95,8 @@
         const info = state.preview || state.job.preview, job = state.job, progress = job.progress || {};
         text("title", job.phase === "complete" ? "Node migration complete" : view.resumable ? "Resume Master node migration" : "Migrate from Master Koinos AI Node");
         text("intro", job.phase === "complete" ? "The chain data is now owned by this plugin. Start the node when you are ready." : "Move chain data from Master Koinos AI Node into this plugin so it can manage your node.");
-        text("source", info?.source?.basedir || info?.source?.root || (state.loading ? "Checking the Master node…" : "No Master node source was identified."));
-        text("destination", info?.destination?.basedir || info?.destination?.root || (state.loading ? "Checking the plugin location…" : "Plugin location unavailable."));
+        text("source", (info?.source?.basedir || info?.source?.root) ? KaiI18n.literal(info.source.basedir || info.source.root) : (state.loading ? "Checking the Master node…" : "No Master node source was identified."));
+        text("destination", (info?.destination?.basedir || info?.destination?.root) ? KaiI18n.literal(info.destination.basedir || info.destination.root) : (state.loading ? "Checking the plugin location…" : "Plugin location unavailable."));
         text("network", info?.network || (state.loading ? "Checking…" : "Not identified"));
         text("size", info ? `${bytes(info.bytes)}${Number.isSafeInteger(info.files) ? ` · ${info.files.toLocaleString()} files` : ""}` : state.loading ? "Checking chain files…" : "Chain size unavailable.");
         text("method", info?.mode === "move" ? "Same drive: chain data can be moved without keeping a second full copy." : info?.mode === "copy-delete" ? "Different drives: each verified file is copied, then removed from the old location. Completed files stay transferred if you pause." : "The migration checks the source, destination and available space before transferring.");
@@ -116,7 +117,7 @@
         if (total > 0) { $("progress").max = total; $("progress").value = Math.min(total, done); text("percent", `${Math.min(100, Math.floor(done / total * 100))}%`); }
         else { $("progress").removeAttribute("value"); text("percent", ""); }
         text("progress-detail", state.pausing ? "Pausing safely after the current file…" : progress.detail || (state.starting ? "Waiting for migration confirmation…" : "Preparing the transfer…"));
-        text("progress-count", Number.isSafeInteger(progress.totalFiles) ? `${progress.completedFiles || 0} / ${progress.totalFiles} files · ${bytes(done)}${total ? ` / ${bytes(total)}` : ""}` : "");
+        text("progress-count", Number.isSafeInteger(progress.totalFiles) ? KaiI18n.message`${progress.completedFiles || 0} / ${progress.totalFiles} files · ${bytes(done)}${total ? ` / ${bytes(total)}` : ""}` : "");
         const terminal = ["complete", "failed", "cancelled"].includes(job.phase);
         $("outcome").hidden = !terminal; $("outcome").dataset.phase = job.phase;
         text("outcome-title", { complete: "Chain data transferred", failed: "Migration needs attention", cancelled: "Migration paused" }[job.phase] || "");
@@ -137,11 +138,11 @@
           const label = document.createElement("p"), button = document.createElement("button"); label.className = "node-migration-entry-detail"; button.className = "btn"; button.type = "button"; button.dataset.openNodeMigration = "";
           card.append(label, button); const lead = host.querySelector(":scope > .lead"); if (name === "settings") host.append(card); else if (lead) lead.after(card); else host.prepend(card);
         }
-        card.querySelector("p").textContent = state.job.phase === "running" ? "Node migration is running. Keep KAI open or in the tray until it finishes." : pending ? "Node migration needs to finish before either node can start. Completed files stay transferred." : "Transfer chain data from Master Koinos AI Node into this plugin. Wallets, production keys and funds stay separate.";
-        card.querySelector("button").textContent = state.job.phase === "running" ? "View migration" : pending ? "Resume migration" : "Migrate from Master Koinos AI Node";
+        KaiI18n.setText(card.querySelector("p"), (state.job.phase === "running" ? "Node migration is running. Keep KAI open or in the tray until it finishes." : (pending ? "Node migration needs to finish before either node can start. Completed files stay transferred." : "Transfer chain data from Master Koinos AI Node into this plugin. Wallets, production keys and funds stay separate.")));
+        KaiI18n.setText(card.querySelector("button"), (state.job.phase === "running" ? "View migration" : (pending ? "Resume migration" : "Migrate from Master Koinos AI Node")));
       }
       const banner = document.querySelector("#n-health .banner");
-      if (state.external && banner && !banner.querySelector("[data-open-node-migration]")) { const row = document.createElement("div"), button = document.createElement("button"); row.className = "node-migration-warning-action"; button.className = "btn"; button.type = "button"; button.dataset.openNodeMigration = ""; button.textContent = "Migrate from Master Koinos AI Node"; row.append(button); banner.append(row); }
+      if (state.external && banner && !banner.querySelector("[data-open-node-migration]")) { const row = document.createElement("div"), button = document.createElement("button"); row.className = "node-migration-warning-action"; button.className = "btn"; button.type = "button"; button.dataset.openNodeMigration = ""; KaiI18n.setText(button, "Migrate from Master Koinos AI Node"); row.append(button); banner.append(row); }
     }
     document.addEventListener("click", event => { if (event.target.closest?.("[data-open-node-migration]")) void controller.open(); });
     $("acknowledge").addEventListener("change", event => controller.acknowledge(event.target.checked));
