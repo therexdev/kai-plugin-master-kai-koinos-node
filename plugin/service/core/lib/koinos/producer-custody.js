@@ -5,6 +5,7 @@ const { Signer, Transaction, utils } = require("koilib");
 const { parseAmount, cmpSats } = require("./format");
 const { hash } = require("../koin-network/job-protocol");
 const keyText = value => value ? Buffer.from(value, "base64").toString("base64url") : null;
+const productionSigner = (value, publicKey = null) => { const wif=String(value).trim(); if (!utils.isChecksumWif(wif)) throw new Error("Production key encoding is invalid."); const length=publicKey ? Buffer.from(publicKey,"base64").length : 0; return Signer.fromWif(wif,length ? length!==65 : !wif.startsWith("5")); };
 const settingsHealth = settings => typeof settings.health === "function" ? settings.health() : { ok: true, error: null, recoveredFromBackup: false, backupError: null };
 const requireHealthySettings = settings => { const health = settingsHealth(settings); if (!health.ok) throw new Error("Producer custody settings could not be loaded safely. Production and producer wallet actions are disabled until you stop the node and explicitly save the intended custody mode again."); return health; };
 const externalMode = settings => { requireHealthySettings(settings); return settings.get("producer.mode", "local") === "external"; };
@@ -22,8 +23,8 @@ class ProducerCustody {
     const file = path.join(this.nodeMgr.dirs(this.chain.network().id).producerKeyDir, "private.key");
     if (!fs.existsSync(file) && !pub) return null;
     try {
-      const signer = Signer.fromWif(fs.readFileSync(file, "utf8").trim());
-      if (utils.encodeBase64url(signer.publicKey) === pub) return pub;
+      const signer = productionSigner(fs.readFileSync(file, "utf8"),pub);
+      if (Buffer.from(signer.publicKey).toString("base64url") === pub) return pub;
     } catch { /* no secret or parser details in UI errors */ }
     throw new Error("Hot key files are missing or inconsistent. Stop the node and use Generate hot key to restore the public file from its private key.");
   }
@@ -86,7 +87,7 @@ class ProducerCustody {
       const signer = new Signer({ privateKey: crypto.randomBytes(32) });
       fs.writeFileSync(priv, signer.getPrivateKey("wif") + "\n", { flag: "wx", mode: 0o600 });
     }
-    const signer = Signer.fromWif(fs.readFileSync(priv, "utf8").trim());
+    const signer = productionSigner(fs.readFileSync(priv, "utf8"), !rotate && fs.existsSync(pub) ? fs.readFileSync(pub,"utf8").trim() : null);
     const publicKey = utils.encodeBase64url(signer.publicKey);
     fs.writeFileSync(pub, publicKey + "\n", { mode: 0o600 });
     this.state.set("producerDraft", null);

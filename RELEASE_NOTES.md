@@ -1,3 +1,13 @@
+# Master KAI Koinos Node 0.1.6 — unreleased
+
+Adds a reviewed migration dialog for selecting chain data, node/producer settings, the existing production signing key and an optional encrypted local wallet from Master Koinos AI Node. Existing destination wallets and keys are preserved. External custody keeps its watch-only producer address and hot block-signing key; the cold account key remains on the external signing device.
+
+New chain transfers retain the source and check available disk space. Interrupted older transfers keep their recorded resume behavior. Production and automatic startup stay off after migration; imported profile settings, keys or wallets leave automatic spending disabled, and on-chain registration is verified before external production resumes. No key rotation, on-chain registration, token transfer or pending transaction replay is performed by migration.
+
+Distribution accounting, pending payouts, funding journals and Node API configuration are excluded. This source version is awaiting a signed immutable package and is not a published update.
+
+## Previous release
+
 # Master KAI Koinos Node 0.1.5
 
 Completes translation coverage for menus, forms, dialogs, tooltips and changing status text in English, Spanish, Brazilian Portuguese, French and German. Open views follow the language saved in Core Settings, including labels created after the view loads. Drafts, names, code and other user content remain intact.

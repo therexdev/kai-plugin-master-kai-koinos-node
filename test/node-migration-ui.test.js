@@ -63,10 +63,10 @@ test("polling cannot replace a fresh resume review with an older journal preview
   const f = fixture({ job: { phase: "cancelled", resumable: true, preview: review({ previewId: "old", resumable: true }) }, preview: review({ previewId: "new", resumable: true }) });
   await f.controller.open(); await f.controller.poll(); assert.equal(f.controller.snapshot().preview.previewId, "new"); f.controller.dispose();
 });
-test("renderer assets retain all nine Master Node menus, safe text rendering and pause/recovery controls", () => {
+test("renderer assets retain original nine menus, safe text rendering and pause/recovery controls", () => {
   const rootDir = path.join(__dirname, "../plugin"), html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8"), script = fs.readFileSync(path.join(rootDir, "node-migration.js"), "utf8"), bridge = fs.readFileSync(path.join(rootDir, "bridge.js"), "utf8");
   assert.deepEqual([...html.matchAll(/data-view="([^"]+)"/g)].map(m => m[1]), ["dashboard", "wallet", "fund", "burn", "node", "distribution", "master-api", "returns", "settings"]);
-  new vm.Script(script); assert.match(html, /<dialog id="node-migration-dialog"/); assert.match(html, /I have closed Master Koinos AI Node, including its tray icon/); assert.match(html, /Master Node chain data/); assert.match(script, /Migrate from Master Koinos AI Node/); assert.match(script, /KOIN and VHP manually/); assert.match(script, /Pause migration/); assert.match(script, /Resume migration/);
+  new vm.Script(script); assert.match(html, /<dialog id="node-migration-dialog"/); assert.match(html, /including its tray icon/); assert.match(script, /cold wallet private key stays outside this app/); assert.match(script, /Pause migration/); assert.match(script, /Resume migration/);
   assert.ok(!/innerHTML|fetch\(|window\.open\(/.test(script)); assert.match(bridge, /"node:profileMigrationPreview","node:profileMigrationStatus"/);
   assert.equal(bytes(1024), "1 KB"); assert.equal(bytes(-1), "Unknown size");
 });
@@ -120,5 +120,111 @@ test("a rejected preview settles all pending labels and keeps retry and review a
     fail = false; await controller.preview();
     assert.equal(get("destination").textContent, "/plugin/node/mainnet/basedir"); assert.equal(get("network").textContent, "mainnet");
     assert.equal(get("error").hidden, true); controller.acknowledge(true); assert.equal(get("submit").disabled, false);
+  } finally { controller.dispose(); }
+});
+
+test("detected producer settings and hot key are defaulted into a second bound review but wallet is opt-in", async () => {
+  const components = { chain: { available: true }, settings: { available: true }, signingKey: { available: true }, wallet: { available: true } };
+  let previews = 0;
+  const f = fixture({ call: async (channel, input) => {
+    if (channel.endsWith("Status")) return { phase: "idle" };
+    if (channel.endsWith("Preview")) return review({ components, options: input.options, previewId: `review-${++previews}` });
+    if (channel.endsWith("Start")) return { phase: "running" };
+  } });
+  await f.controller.open();
+  assert.deepEqual(f.calls.filter(([c]) => c.endsWith("Preview")).map(([, p]) => p.options), [
+    { chain: true, settings: false, signingKey: false, wallet: false },
+    { chain: true, settings: true, signingKey: true, wallet: false }
+  ]);
+  assert.equal(f.controller.snapshot().preview.previewId, "review-2");
+  f.controller.acknowledge(true);
+  await f.controller.select("wallet", true);
+  assert.equal(f.controller.snapshot().acknowledged, false);
+  assert.equal(f.controller.view().canStart, false);
+  assert.equal(f.controller.snapshot().options.wallet, true);
+  assert.equal(f.controller.snapshot().preview.previewId, "review-3");
+  f.controller.acknowledge(true); await f.controller.start();
+  assert.deepEqual(f.calls.at(-1), ["node:profileMigrationStart", { previewId: "review-3" }]);
+  f.controller.dispose();
+});
+
+test("settings and hot key remain paired while chain can be excluded for a settings-only import", async () => {
+  const components = { chain: { available: true }, settings: { available: true }, signingKey: { available: true }, wallet: { available: false } };
+  const f = fixture({ call: async (channel, input) => channel.endsWith("Status") ? { phase: "idle" } : review({ components, options: input.options }) });
+  await f.controller.open();
+  await f.controller.select("chain", false);
+  assert.deepEqual(f.controller.snapshot().options, { chain: false, settings: true, signingKey: true, wallet: false });
+  await f.controller.select("settings", false);
+  assert.deepEqual(f.controller.snapshot().options, { chain: false, settings: false, signingKey: false, wallet: false });
+  f.controller.acknowledge(true); assert.equal(f.controller.view().canStart, false);
+  const callsBefore = f.calls.length;
+  await f.controller.select("wallet", true);
+  assert.equal(f.calls.length, callsBefore); assert.equal(f.controller.snapshot().options.wallet, false);
+  await f.controller.select("signingKey", true);
+  assert.deepEqual(f.controller.snapshot().options, { chain: false, settings: true, signingKey: true, wallet: false });
+  f.controller.dispose();
+});
+
+test("changing options invalidates the previous acknowledgement until the new native review completes", async () => {
+  const pending = deferred(), components = { settings: { available: true }, signingKey: { available: true }, wallet: { available: true } };
+  let previewCount = 0;
+  const f = fixture({ call: async (channel, input) => {
+    if (channel.endsWith("Status")) return { phase: "idle" };
+    if (channel.endsWith("Preview")) return ++previewCount === 3 ? pending.promise : review({ components, options: input.options });
+    throw Error("start must remain blocked");
+  } });
+  await f.controller.open(); f.controller.acknowledge(true);
+  const selecting = f.controller.select("wallet", true);
+  assert.equal(f.controller.snapshot().loading, true);
+  assert.equal(f.controller.snapshot().reviewed, false);
+  assert.equal(f.controller.view().canStart, false);
+  f.controller.acknowledge(true); await f.controller.start();
+  assert.ok(!f.calls.some(([channel]) => channel.endsWith("Start")));
+  pending.resolve(review({ components, options: { chain: true, settings: true, signingKey: true, wallet: true }, previewId: "wallet-reviewed" }));
+  await selecting; assert.equal(f.controller.snapshot().acknowledged, false);
+  assert.equal(f.controller.snapshot().preview.previewId, "wallet-reviewed"); f.controller.dispose();
+});
+
+test("a resumed migration restores and locks its recorded choices without applying defaults", async () => {
+  const options = { chain: false, settings: true, signingKey: true, wallet: true };
+  const reviewed = review({ resumable: true, options, components: { settings: { available: true }, signingKey: { available: true }, wallet: { available: true } } });
+  const f = fixture({ job: { phase: "cancelled", resumable: true, preview: reviewed }, preview: reviewed });
+  await f.controller.open();
+  assert.deepEqual(f.controller.snapshot().options, options); assert.equal(f.controller.view().canSelect, false);
+  const count = f.calls.length; await f.controller.select("wallet", false);
+  assert.equal(f.calls.length, count); assert.deepEqual(f.controller.snapshot().options, options);
+  assert.equal(f.calls.filter(([c]) => c.endsWith("Preview")).length, 1); f.controller.dispose();
+});
+
+test("newly conflicting selected imports remain deselectable and producer identity is rendered as literal text", async () => {
+  const { mount } = require("../plugin/node-migration");
+  const nodes = new Map();
+  function element() { return { textContent: "", hidden: false, disabled: false, checked: false, open: false, dataset: {}, isConnected: true, addEventListener() {}, removeAttribute() {}, focus() {}, showModal() { this.open = true; }, close() { this.open = false; } }; }
+  const document = { activeElement: element(), addEventListener() {}, querySelector: () => null,
+    getElementById(id) { if (id.startsWith("view-")) return null; if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); } };
+  let conflict = false;
+  const controller = mount(document, async (channel, input) => {
+    if (channel.endsWith("Status")) return { ok: true, data: { phase: "idle" } };
+    return { ok: true, data: review({ options: input.options, available: !conflict || !input.options.signingKey,
+      producer: { mode: "external", address: "<source-producer>", publicKey: "Settings" },
+      components: { chain: { available: true }, settings: { available: true }, signingKey: { available: !conflict }, wallet: { available: false } }
+    }) };
+  }, localeFixture);
+  const get = suffix => nodes.get(`node-migration-${suffix}`);
+  try {
+    await controller.open();
+    assert.equal(get("producer-address").textContent, "<source-producer>");
+    assert.equal(get("producer-key").textContent, "Settings");
+    assert.equal(get("external-note").hidden, false);
+    assert.equal(get("option-wallet").disabled, true);
+    conflict = true; await controller.preview();
+    assert.equal(get("option-signingKey").checked, true);
+    assert.equal(get("option-signingKey").disabled, false);
+    assert.match(get("selection-note").textContent, /resolve any conflicts/);
+    controller.acknowledge(true); assert.equal(controller.view().canStart, false);
+    await controller.select("signingKey", false);
+    assert.equal(get("option-signingKey").checked, false);
+    assert.equal(get("option-signingKey").disabled, true);
+    controller.acknowledge(true); assert.equal(controller.view().canStart, true);
   } finally { controller.dispose(); }
 });

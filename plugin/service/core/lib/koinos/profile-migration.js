@@ -1,8 +1,9 @@
 "use strict";
-// Reviewed transfer of chain databases only. Wallets, producer keys, config and
-// arbitrary Docker projects are deliberately outside this migration boundary.
+// Reviewed, resumable copies from a verified legacy Node. Profile identity and
+// key/wallet imports require an explicit selection and native review.
 const fs = require("node:fs"), fsp = require("node:fs/promises"), path = require("node:path"), crypto = require("node:crypto"), os = require("node:os");
 const { NETWORKS } = require("./constants");
+const profileImport = require("./profile-import");
 const { canonicalPath, claimProject } = require("./node-control");
 const { canonicalGenesis, MAX_BYTES: MAX_GENESIS_BYTES } = require("./genesis-json");
 const DATA_DIRS = ["chain", "block_store", "mempool", "transaction_store", "account_history", "contract_meta_store"];
@@ -210,7 +211,8 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
       if ((overlap(sourcePath, source) || overlap(sourcePath, destination)) && !allowed.has(row.id)) throw Error("Another Docker container can write this chain data. Stop and remove that container's access before migrating; it was left untouched.");
     }
   }
-  async function candidate(network) {
+  async function candidate(network, selected) {
+    selected = profileImport.options(selected);
     const rows = await dockerRows(), project = NETWORKS[network].composeProject, owned = rows.filter(row => row.project === project);
     if (!owned.length) throw Error("No Master Koinos AI Node was found for this network.");
     if (owned.some(row => typeof row.root !== "string" || !row.root || !recognizedImage(row.service, row.image))) throw Error("This Docker project is not a recognized Koinos AI node. Its containers were left untouched.");
@@ -229,23 +231,28 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
     checkedPath(destination.root, { missing: true }); checkedPath(destination.basedir, { missing: true });
     const oldGenesis = path.join(root, "config", "genesis_data.json"), currentGenesis = path.join(manager.templateRoot, NETWORKS[network].templateDir, "genesis_data.json");
     if (genesisValue(oldGenesis, "The old node's genesis file") !== genesisValue(currentGenesis, "The plugin's genesis template")) throw Error(`The old node's genesis does not match the selected ${NETWORKS[network].label} network. Its containers and chain data were preserved.`);
-    for (const name of DATA_DIRS) if (stat(path.join(destination.basedir, name))) throw Error("The plugin already has chain data. Existing destination data was preserved.");
+    for (const name of DATA_DIRS) if (selected.chain && stat(path.join(destination.basedir, name))) throw Error("The plugin already has chain data. Existing destination data was preserved.");
     if (stat(path.join(basedir, MARKER)) || stat(path.join(destination.basedir, MARKER))) throw Error("A chain restore or migration is incomplete. Resume its recorded operation first.");
     writers(rows, basedir, destination.basedir, new Set(owned.map(row => row.id)));
-    const info = await inventory(basedir);
+    const info = selected.chain ? await inventory(basedir) : {bytes:0,files:0};
     let ancestor = path.resolve(destination.root); while (!stat(ancestor)) ancestor = path.dirname(ancestor);
-    const mode = fs.statSync(basedir).dev === fs.statSync(ancestor).dev ? "move" : "copy-delete";
-    return { available: true, previewId: crypto.randomUUID(), network, source: { root, basedir, ...masterSource }, destination: { root: path.resolve(destination.root), basedir: path.resolve(destination.basedir) }, bytes: info.bytes, files: info.files, mode, resumable: false,
-      detail: "Close Master Koinos AI Node, including its tray process. Migration stops and removes only its verified Node containers, then transfers chain data. Keep the old app closed after migration.",
-      walletNotice: "Wallets, private producer keys, KOIN and VHP are not migrated. If you created a new Node wallet, transfer funds manually. Mining stays off.",
+    if (selected.chain) { const free = fs.statfsSync(ancestor); if (Number(free.bavail) * Number(free.bsize) < info.bytes) throw Error("Not enough free space to keep the original chain and copy it. Choose storage with enough room before migration."); }
+    const source = { root, basedir, ...masterSource };
+    const profile = profileImport.inspect({source,network,manager,context:manager.profileContext,selection:selected,profiles:dependencies.profileRoots});
+    const value = { available: true, previewId: crypto.randomUUID(), network, source, destination: { root: path.resolve(destination.root), basedir: path.resolve(destination.basedir) }, bytes: info.bytes, files: info.files, mode: "copy", options:selected, components:profile.components, producer:profile.producer, profileReview:profile.plan, resumable: false,
+      detail: "Close the old KAI application, including its tray process. Migration stops and removes only its verified Node containers. Original chain, settings, wallet and key files are retained; keep the old app closed after migration.",
+      walletNotice: "KOIN and VHP remain at the same on-chain addresses. Production and automatic rewards stay off. External signing devices must reconnect; pending transactions and session credentials are not imported.",
       containers: owned.map(row => ({ id: row.id, service: row.service, root: row.root, image: row.image })).sort((a, b) => a.id.localeCompare(b.id)) };
+    try { profileImport.validate(value,manager.profileContext); } catch(error) { value.available=false;value.selectionError=error.message; }
+    return value;
   }
-  function publicPreview(value) { const { containers, ...rest } = value; return structuredClone(rest); }
+  function publicPreview(value) { const { containers, profileReview, ...rest } = value; return structuredClone(rest); }
+
   function marker(record) { return { schema: 1, kind: "kai-profile-chain-migration", id: record.id, network: record.network, destination: record.destination.basedir, source: record.source.basedir }; }
   function assertMarker(file, record) { const data = readJson(file, 8192); if (!data || data.id !== record.id || data.kind !== "kai-profile-chain-migration" || data.destination !== record.destination.basedir || data.source !== record.source.basedir) throw Error("Node migration marker changed; data was preserved for recovery."); }
   function progress(record, detail) { state.progress = { completedBytes: record.completedBytes, totalBytes: record.bytes, completedFiles: record.completedFiles, totalFiles: record.files, detail }; }
   function save(record) { atomicJson(recordPath(record.network), record); }
-  async function preview(network) {
+  async function preview(network, selection) {
     if (pending) return state.preview;
     const record = journal(network);
     if (record && record.phase !== "complete") {
@@ -253,7 +260,7 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
       state = { phase: ["running", "preparing"].includes(record.phase) ? "cancelled" : record.phase, preview: publicPreview(reviewed), resumable: true, progress: { completedBytes: record.completedBytes, totalBytes: record.bytes, completedFiles: record.completedFiles, totalFiles: record.files, detail: "Resume the saved transfer before starting either node." }, ...(record.error ? { error: record.error } : {}) };
       return publicPreview(reviewed);
     }
-    reviewed = await candidate(network); return publicPreview(reviewed);
+    reviewed = await candidate(network, selection); return publicPreview(reviewed);
   }
   function status(network) {
     if (pending || state.preview?.network === network) return stateCopy();
@@ -295,7 +302,7 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
       const temporary = path.join(path.dirname(destination), ".kai-chain-" + record.id + ".tmp");
       const stale = stat(temporary); if (stale) { if (!privateFile(stale)) throw Error("Unsafe temporary chain copy was preserved."); fs.unlinkSync(temporary); syncDir(path.dirname(temporary)); }
       let linked = false;
-      try { await fsp.link(source, destination); linked = true; }
+      try { if (record.preview.mode !== "copy") { await fsp.link(source, destination); linked = true; } }
       catch (error) { if (error.code !== "EXDEV") throw error; }
       if (linked) {
         const handle = await fsp.open(destination, "r+"); try { await handle.sync(); } finally { await handle.close(); }
@@ -330,7 +337,7 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
     checkedPath(source, { missing: true }); checkedPath(destination);
     sourceStat = stat(source); destinationStat = fs.lstatSync(destination);
     if (!destinationStat.isFile() || destinationStat.isSymbolicLink() || !same(verifiedDestination, identity(destinationStat)) || destinationStat.ctimeMs !== verifiedDestination.ctimeMs) throw Error("The verified destination changed before cleanup. The source chain file was preserved.");
-    if (sourceStat) {
+    if (sourceStat && record.preview.mode !== "copy") {
       if (!same(saved.source, identity(sourceStat))) throw Error("Source chain changed before cleanup; original file was retained.");
       // No application can interleave here; the shared project lease and old
       // restore marker keep its supervisor out for this complete operation.
@@ -342,10 +349,14 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
     let release;
     try {
       manager.assertOperation("migration");
+      manager.profileContext?.assertReady?.();
+      if (resume) profileImport.verify({record,context:manager.profileContext,profiles:dependencies.profileRoots});
       release = claim(NETWORKS[record.network].composeProject, { lockRoot: manager.lockRoot });
       manager._desiredRunning = false; manager._stopWatchdog(); manager._saveIntent(record.network, false);
       if (!resume) {
-        const fresh = await candidate(record.network);
+        const fresh = await candidate(record.network, record.preview.options);
+        if (!fresh.available) throw Error(fresh.selectionError || "The selected migration items are unavailable.");
+        if (JSON.stringify(fresh.profileReview) !== JSON.stringify(record.preview.profileReview)) throw Error("The legacy or destination profile changed since review. Open migration again.");
         if (JSON.stringify(fresh.containers) !== JSON.stringify(record.preview.containers) || key(fresh.source.root) !== key(record.source.root) || key(fresh.source.basedir) !== key(record.source.basedir)) throw Error("The old Node changed since review. Open migration again.");
         record.phase = "preparing"; save(record);
         const ids = fresh.containers.map(row => row.id);
@@ -356,7 +367,7 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
         writers(rows, record.source.basedir, record.destination.basedir, new Set(ids));
         const removed = await exec("docker", ["rm", ...ids], { timeout: 30000 }); if (!removed.ok) throw Error("Could not retire the old containers. No chain data was moved.");
         await ensureNoWriters(record); controller.signal.throwIfAborted();
-        const files = await inventory(record.source.basedir);
+        const files = record.preview.options?.chain === false ? {items:[],directories:[],bytes:0,files:0} : await inventory(record.source.basedir);
         record.bytes = files.bytes; record.files = files.files;
         fs.mkdirSync(record.destination.basedir, { recursive: true, mode: 0o700 }); checkedPath(record.destination.basedir);
         atomicJson(manifestPath(record.network), { schema: 1, id: record.id, directories: files.directories, items: files.items });
@@ -364,7 +375,7 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
         atomicJson(path.join(record.source.basedir, MARKER), marker(record)); atomicJson(path.join(record.destination.basedir, MARKER), marker(record));
       } else {
         if (!record.prepared) {
-          for (const name of DATA_DIRS) if (stat(path.join(record.destination.basedir, name))) throw Error("The plugin destination gained chain data after review. It was preserved; inspect that data before resuming.");
+          for (const name of DATA_DIRS) if (record.preview.options?.chain !== false && stat(path.join(record.destination.basedir, name))) throw Error("The plugin destination gained chain data after review. It was preserved; inspect that data before resuming.");
           const rows = await dockerRows(), ids = record.preview.containers.map(row => row.id), present = rows.filter(row => ids.includes(row.id));
           if (rows.some(row => row.project === NETWORKS[record.network].composeProject && !ids.includes(row.id))) throw Error("The old node was recreated after migration started. Keep it closed and inspect its containers before resuming.");
           for (const row of present) { const expected = record.preview.containers.find(item => item.id === row.id); if (!expected || row.project !== NETWORKS[record.network].composeProject || row.root !== expected.root || row.service !== expected.service || row.image !== expected.image) throw Error("Old node container identity changed."); }
@@ -377,7 +388,7 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
             const removed = await exec("docker", ["rm", ...retained], { timeout: 30000 }); if (!removed.ok) throw Error("Could not retire the old node containers.");
           }
           await ensureNoWriters(record); controller.signal.throwIfAborted();
-          const files = await inventory(record.source.basedir); record.bytes = files.bytes; record.files = files.files;
+          const files = record.preview.options?.chain === false ? {items:[],directories:[],bytes:0,files:0} : await inventory(record.source.basedir); record.bytes = files.bytes; record.files = files.files;
           fs.mkdirSync(record.destination.basedir, { recursive: true, mode: 0o700 }); checkedPath(record.destination.basedir);
           atomicJson(manifestPath(record.network), { schema: 1, id: record.id, directories: files.directories, items: files.items });
           record.prepared = true; save(record);
@@ -401,16 +412,17 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
         progress(record, "Transferring " + item.relative); await transfer(record, item);
       }
       await ensureNoWriters(record);
-      for (const relative of [...manifest.directories].sort((a, b) => b.length - a.length)) {
+      for (const relative of (record.preview.mode === "copy" ? [] : [...manifest.directories]).sort((a, b) => b.length - a.length)) {
         const directory = relativeFile(record.source.basedir, relative); checkedPath(directory, { missing: true });
         try { fs.rmdirSync(directory); syncDir(path.dirname(directory)); } catch (error) { if (!absent(error)) throw Error("Unexpected data appeared in the old chain folder. Keep both applications stopped and resume after inspecting it."); }
       }
-      const finalInventory = await inventory(record.destination.basedir);
+      const finalInventory = record.preview.options?.chain === false ? {files:0,items:[]} : await inventory(record.destination.basedir);
       const expectedFiles = new Map(manifest.items.map(item => [item.relative, item.size]));
       if (finalInventory.files !== expectedFiles.size || finalInventory.items.some(item => expectedFiles.get(item.relative) !== item.size)) throw Error("The destination chain layout changed during migration. Keep the node stopped and inspect it before resuming.");
+      profileImport.apply({record,manager,context:manager.profileContext,save,profiles:dependencies.profileRoots});
       manager.ensureFiles(record.network, null); manager._saveIntent(record.network, false);
       assertMarker(path.join(record.destination.basedir, MARKER), record);
-      record.phase = "complete"; record.result = { summary: "Chain data migrated. The old node remains retired. Start a sync-only node in this plugin when ready. Wallets, producer keys, KOIN and VHP were not moved.", movedFiles: record.completedFiles, deletedFiles: record.completedFiles, bytes: record.completedBytes, warnings: [] };
+      record.phase = "complete"; record.result = { summary: record.preview.mode === "copy" ? "Selected Node data was copied and verified. Original files were retained. The old node remains retired; verify the producer address and on-chain key registration before enabling production." : "Chain migration complete. The old node remains retired.", imported: record.preview.options || {chain:true}, copiedFiles: record.preview.mode === "copy" ? record.completedFiles : 0, movedFiles: record.preview.mode === "copy" ? 0 : record.completedFiles, deletedFiles: record.preview.mode === "copy" ? 0 : record.completedFiles, bytes: record.completedBytes, warnings: [] };
       save(record); fs.unlinkSync(path.join(record.destination.basedir, MARKER)); syncDir(record.destination.basedir);
       state.phase = "complete"; state.result = record.result; state.resumable = false; progress(record, "Chain migration complete. Mining remains off."); await onComplete(record);
     } catch (error) {
@@ -425,10 +437,14 @@ function createProfileMigration({ manager, journalRoot = path.join(manager.dataR
     if (!reviewed || reviewed.network !== network || reviewed.previewId !== previewId) throw Error("Review this Node migration again before starting.");
     if (manager._op?.running || manager._move?.running || manager._quickSync?.running || manager._control.size) throw Error("Finish this plugin's current node operation before migrating another profile.");
     let record = journal(network), resume = !!record && record.phase !== "complete";
+    if (!resume) { if (!reviewed.available) throw Error(reviewed.selectionError || "The selected migration items are unavailable."); profileImport.validate(reviewed,manager.profileContext); manager.profileContext?.assertReady?.(); }
     if (!resume) record = { schema: 1, id: reviewed.previewId, network, source: reviewed.source, destination: reviewed.destination, preview: structuredClone(reviewed), bytes: reviewed.bytes, files: reviewed.files, completedFiles: 0, completedBytes: 0, phase: "running", prepared: false, current: null };
     controller = new AbortController(); manager._profileMigrationActive = true;
     state = { phase: "running", preview: publicPreview(reviewed), resumable: resume, progress: { completedBytes: record.completedBytes, totalBytes: record.bytes, completedFiles: record.completedFiles, totalFiles: record.files, detail: resume ? "Resuming the verified chain transfer…" : "Checking the old node and stopping its containers…" } };
-    pending = Promise.resolve().then(() => run(record, resume)); return stateCopy();
+    pending = Promise.resolve().then(() => manager.profileContext?.runExclusive ? manager.profileContext.runExclusive(() => run(record, resume)) : run(record,resume)).catch(error => {
+      state.phase="failed";state.error=error.message;state.resumable=!!stat(recordPath(record.network));
+      manager._profileMigrationActive=false;pending=null;
+    }); return stateCopy();
   }
   return { preview, status, start, review(network, previewId) { if (!reviewed || reviewed.network !== network || reviewed.previewId !== previewId) throw Error("Review this Node migration again."); return publicPreview(reviewed); }, cancel() { controller?.abort(); return stateCopy(); }, async dispose() { controller?.abort(); await pending; }, get running() { return !!pending; } };
 }

@@ -40,6 +40,20 @@ function fixture(t, options = {}) {
 }
 async function finish(service) { const deadline = Date.now() + 10000; while (service.running && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(service.running, false); return service.status("mainnet"); }
 async function begin(f) { const preview = await f.service.preview("mainnet"); f.service.start("mainnet", preview.previewId); return finish(f.service); }
+async function legacyInterruptedTransfer(t, f, mode) {
+  // Model the journal written by the old release before file transfer began.
+  // Existing destructive journals must finish under their original contract;
+  // new imports always use an independent, source-retaining copy.
+  let paused = false;
+  f.onExec(args => { if (!paused && args[0] === "ps" && f.calls.some(call => call[0] === "rm")) { paused = true; f.service.cancel(); } });
+  const state = await begin(f); assert.equal(state.phase, "cancelled"); assert.equal(state.progress.completedFiles, 0);
+  f.onExec(null);
+  const file = path.join(f.dataRoot, ".profile-migrations/mainnet.json"), record = JSON.parse(fs.readFileSync(file, "utf8"));
+  record.preview.mode = mode;
+  for (const key of ["options", "components", "profileReview", "producer"]) delete record.preview[key];
+  fs.writeFileSync(file, JSON.stringify(record));
+  const service = f.make(); t.after(() => service.dispose()); f.service = service;
+}
 
 test("migration failure injection matches normalized Windows paths without crossing directory boundaries", () => {
   const root = "D:\\Temp\\Kai-Chain-Migration\\old\\mainnet\\basedir";
@@ -50,14 +64,14 @@ test("migration failure injection matches normalized Windows paths without cross
   assert.equal(inside(root, "E:\\Temp\\Kai-Chain-Migration\\old\\mainnet\\basedir\\chain\\0001.sst", path.win32), false);
 });
 
-test("reviewed migration retires only the old stack and moves chain state without wallet or producer keys", async t => {
+test("reviewed migration retires only the old stack and copies chain state while retaining originals and excluded wallet/key", async t => {
   const f = fixture(t), before = fs.statSync(path.join(f.basedir, "chain/0001.sst"));
-  const preview = await f.service.preview("mainnet"); assert.equal(preview.files, 3); assert.equal(preview.available, true); assert.equal(preview.mode, "move"); assert.equal(preview.containers, undefined); assert.match(preview.walletNotice, /KOIN and VHP/);
+  const preview = await f.service.preview("mainnet"); assert.equal(preview.files, 3); assert.equal(preview.available, true); assert.equal(preview.mode, "copy"); assert.equal(preview.containers, undefined); assert.match(preview.walletNotice, /KOIN and VHP/);
   assert.equal(f.calls.some(args => ["update", "stop", "rm"].includes(args[0])), false);
   f.service.start("mainnet", preview.previewId); const state = await finish(f.service);
-  assert.equal(state.phase, "complete", state.error); assert.equal(state.result.movedFiles, 3); assert.equal(state.result.deletedFiles, 3); assert.equal(f.claimed, false);
-  const file = path.join(f.target, "basedir/chain/0001.sst"), after = fs.statSync(file); assert.equal(after.ino, before.ino); assert.equal(after.nlink, 1); assert.deepEqual(fs.readFileSync(file), Buffer.alloc(128, 1));
-  assert.equal(fs.existsSync(path.join(f.basedir, "chain")), false); assert.equal(fs.existsSync(path.join(f.target, "basedir/block_producer/private.key")), false);
+  assert.equal(state.phase, "complete", state.error); assert.equal(state.result.copiedFiles, 3); assert.equal(state.result.deletedFiles, 0); assert.equal(f.claimed, false);
+  const file = path.join(f.target, "basedir/chain/0001.sst"), after = fs.statSync(file); assert.notEqual(after.ino, before.ino); assert.equal(after.nlink, 1); assert.deepEqual(fs.readFileSync(file), Buffer.alloc(128, 1));
+  assert.equal(fs.existsSync(path.join(f.basedir, "chain")), true); assert.equal(fs.existsSync(path.join(f.target, "basedir/block_producer/private.key")), false);
   assert.equal(fs.readFileSync(path.join(f.basedir, "block_producer/private.key"), "utf8"), "private producer key remains old");
   assert.equal(fs.readFileSync(path.join(f.root, "old/wallet/wallet.json"), "utf8"), "original encrypted wallet remains old");
   assert.equal(fs.readFileSync(path.join(f.source, ".env"), "utf8"), "OLD_CONFIG=kept\n");
@@ -85,12 +99,12 @@ test("the full stopped legacy template including official p2p is recognized and 
   const preview = await f.service.preview("mainnet"); assert.equal(preview.available, true); assert.equal(preview.network, "mainnet");
   assert.ok(!f.calls.some(args => ["update", "stop", "rm"].includes(args[0])));
   f.service.start("mainnet", preview.previewId); const state = await finish(f.service);
-  assert.equal(state.phase, "complete", state.error); assert.equal(state.result.movedFiles, 3);
+  assert.equal(state.phase, "complete", state.error); assert.equal(state.result.copiedFiles, 3);
   for (const command of ["update", "stop", "rm"]) {
     const args = f.calls.find(args => args[0] === command); assert.ok(args); assert.equal(args.filter(value => /^[a-f0-9]{64}$/.test(value)).length, rows.length);
     assert.ok(rows.every(row => args.includes(row.id)));
   }
-  assert.equal(fs.existsSync(path.join(f.basedir, "chain")), false);
+  assert.equal(fs.existsSync(path.join(f.basedir, "chain")), true);
   assert.equal(fs.readFileSync(path.join(f.basedir, "block_producer/private.key"), "utf8"), "private producer key remains old");
 });
 
@@ -103,7 +117,7 @@ test("full stopped Windows legacy stacks migrate with equivalent genesis seriali
     const preview = await f.service.preview("mainnet"); assert.equal(preview.available, true); assert.equal(preview.network, "mainnet");
     assert.ok(!f.calls.some(args => ["update", "stop", "rm"].includes(args[0])));
     f.service.start("mainnet", preview.previewId); const state = await finish(f.service); assert.equal(state.phase, "complete", state.error);
-    assert.equal(state.result.movedFiles, 3); assert.equal(fs.existsSync(path.join(f.basedir, "chain")), false);
+    assert.equal(state.result.copiedFiles, 3); assert.equal(fs.existsSync(path.join(f.basedir, "chain")), true);
     assert.equal(fs.readFileSync(file, "utf8"), changed, "Migration must not rewrite the old genesis");
     assert.equal(fs.readFileSync(path.join(f.basedir, "block_producer/private.key"), "utf8"), "private producer key remains old");
     assert.equal(fs.readFileSync(path.join(f.root, "old/wallet/wallet.json"), "utf8"), "original encrypted wallet remains old");
@@ -215,13 +229,14 @@ test("linked source files and directories are never transferred", async t => {
   await assert.rejects(f.service.preview("mainnet"), /linked or special/); assert.ok(fs.existsSync(path.join(f.basedir, "chain/0001.sst")));
 });
 
-test("cross-device copy verifies each destination and deletes each original after publication", async t => {
-  const f = fixture(t), original = fsp.link; let injected = 0;
-  fsp.link = async (source, target) => { if (inside(f.basedir, source)) { injected++; throw Object.assign(Error("different filesystem"), { code: "EXDEV" }); } return original(source, target); };
+test("new copies never hard-link source chain files and retain every verified original", async t => {
+  const f = fixture(t), original = fsp.link; let sourceLinks = 0;
+  fsp.link = async (source, target) => { if (inside(f.basedir, source)) { sourceLinks++; throw Error("Source hard links are forbidden for copies"); } return original(source, target); };
   t.after(() => { fsp.link = original; });
   const before = fs.statSync(path.join(f.basedir, "chain/0001.sst")), state = await begin(f); assert.equal(state.phase, "complete", state.error);
-  assert.equal(injected, 3, "Every chain file must exercise the cross-device copy branch");
-  const after = fs.statSync(path.join(f.target, "basedir/chain/0001.sst")); assert.notEqual(after.ino, before.ino); assert.equal(after.nlink, 1); assert.equal(fs.existsSync(path.join(f.basedir, "chain")), false);
+  assert.equal(sourceLinks, 0); assert.equal(state.result.copiedFiles, 3); assert.equal(state.result.movedFiles, 0); assert.equal(state.result.deletedFiles, 0);
+  const after = fs.statSync(path.join(f.target, "basedir/chain/0001.sst")); assert.notEqual(after.ino, before.ino); assert.equal(after.nlink, 1); assert.equal(fs.existsSync(path.join(f.basedir, "chain")), true);
+  for (const name of ["chain/0001.sst", "chain/CURRENT", "block_store/blocks.sst"]) assert.deepEqual(fs.readFileSync(path.join(f.basedir,name)), fs.readFileSync(path.join(f.target,"basedir",name)));
 });
 
 test("pause retains completed files and durable markers, then another service instance resumes", async t => {
@@ -230,7 +245,7 @@ test("pause retains completed files and durable markers, then another service in
   let state = await begin(f); assert.equal(state.phase, "cancelled", state.error); assert.equal(state.resumable, true); assert.ok(state.progress.completedFiles > 0); assert.ok(state.progress.completedFiles < 3);
   assert.throws(() => assertRestoreReady(f.basedir)); assert.throws(() => assertRestoreReady(path.join(f.target, "basedir")));
   f.onExec(null); const resumed = f.make(); t.after(() => resumed.dispose()); const preview = await resumed.preview("mainnet"); assert.equal(preview.resumable, true);
-  resumed.start("mainnet", preview.previewId); state = await finish(resumed); assert.equal(state.phase, "complete", state.error); assert.equal(state.result.movedFiles, 3); assert.equal(fs.existsSync(path.join(f.basedir, "chain")), false);
+  resumed.start("mainnet", preview.previewId); state = await finish(resumed); assert.equal(state.phase, "complete", state.error); assert.equal(state.result.copiedFiles, 3); assert.equal(fs.existsSync(path.join(f.basedir, "chain")), true);
 });
 
 test("a writer appearing after stop blocks cleanup and preserves the source", async t => {
@@ -255,11 +270,12 @@ test("pause immediately after container retirement can resume from its preparati
   f.onExec(args => { if (!paused && args[0] === "ps" && f.calls.some(call => call[0] === "rm")) { paused = true; f.service.cancel(); } });
   let state = await begin(f); assert.equal(state.phase, "cancelled"); assert.equal(state.resumable, true); assert.equal(state.progress.completedFiles, 0); assert.equal(f.rows().length, 0);
   f.onExec(null); const resumed = f.make(); t.after(() => resumed.dispose()); const preview = await resumed.preview("mainnet"); assert.equal(preview.resumable, true);
-  resumed.start("mainnet", preview.previewId); state = await finish(resumed); assert.equal(state.phase, "complete", state.error); assert.equal(state.result.movedFiles, 3);
+  resumed.start("mainnet", preview.previewId); state = await finish(resumed); assert.equal(state.phase, "complete", state.error); assert.equal(state.result.copiedFiles, 3);
 });
 
-test("failed cross-device source cleanup resumes the verified pending destination", async t => {
+test("an interrupted legacy cross-device move still recovers failed source cleanup without duplicating publication", async t => {
   const f = fixture(t), link = fsp.link, unlink = fs.unlinkSync; let injected = 0;
+  await legacyInterruptedTransfer(t, f, "copy-delete");
   fsp.link = async (source, target) => { if (inside(f.basedir, source)) { injected++; throw Object.assign(Error("cross-device"), { code: "EXDEV" }); } return link(source, target); };
   let blocked = false;
   fs.unlinkSync = file => { if (!blocked && inside(f.basedir, file) && path.basename(String(file)) === "0001.sst") { blocked = true; throw Object.assign(Error("Synthetic cleanup lock"), { code: "EACCES" }); } return unlink(file); };
@@ -267,17 +283,17 @@ test("failed cross-device source cleanup resumes the verified pending destinatio
   let state = await begin(f); assert.equal(state.phase, "failed"); assert.ok(fs.existsSync(path.join(f.basedir, "chain/0001.sst"))); assert.ok(fs.existsSync(path.join(f.target, "basedir/chain/0001.sst")));
   assert.ok(injected > 0, "Cross-device copy failure must be injected"); assert.equal(blocked, true, "Source cleanup failure must be injected");
   assert.notEqual(fs.statSync(path.join(f.basedir, "chain/0001.sst")).ino, fs.statSync(path.join(f.target, "basedir/chain/0001.sst")).ino);
-  const preview = await f.service.preview("mainnet"); f.service.start("mainnet", preview.previewId); state = await finish(f.service); assert.equal(state.phase, "complete", state.error);
+  const preview = await f.service.preview("mainnet"); assert.equal(preview.mode, "copy-delete"); f.service.start("mainnet", preview.previewId); state = await finish(f.service); assert.equal(state.phase, "complete", state.error);
+  assert.equal(state.result.movedFiles, 3); assert.equal(state.result.deletedFiles, 3); assert.equal(fs.existsSync(path.join(f.basedir, "chain")), false);
 });
 
-test("cross-device crash after publication recognizes only its own extra staging link", async t => {
-  const f = fixture(t), link = fsp.link, unlink = fs.unlinkSync; let injected = 0;
-  fsp.link = async (source, target) => { if (inside(f.basedir, source)) { injected++; throw Object.assign(Error("cross-device"), { code: "EXDEV" }); } return link(source, target); };
+test("copy crash after publication recognizes only its own extra staging link", async t => {
+  const f = fixture(t), unlink = fs.unlinkSync;
   let blocked = false;
   fs.unlinkSync = file => { if (!blocked && String(file).includes(".kai-chain-") && String(file).endsWith(".tmp")) { blocked = true; throw Object.assign(Error("Synthetic crash after publication"), { code: "EACCES" }); } return unlink(file); };
-  t.after(() => { fsp.link = link; fs.unlinkSync = unlink; });
+  t.after(() => { fs.unlinkSync = unlink; });
   let state = await begin(f); assert.equal(state.phase, "failed"); const record = JSON.parse(fs.readFileSync(path.join(f.dataRoot,".profile-migrations/mainnet.json"),"utf8")); const targetFile = path.join(f.target, "basedir", record.current.relative); assert.equal(fs.statSync(targetFile).nlink, 2); assert.ok(fs.existsSync(path.join(f.basedir, record.current.relative)));
-  assert.ok(injected > 0, "Cross-device copy failure must be injected"); assert.equal(blocked, true, "Staging cleanup failure must be injected");
+  assert.equal(blocked, true, "Staging cleanup failure must be injected");
   assert.notEqual(fs.statSync(path.join(f.basedir, record.current.relative)).ino, fs.statSync(targetFile).ino);
   const resumed = f.make(); t.after(() => resumed.dispose()); const preview = await resumed.preview("mainnet"); resumed.start("mainnet", preview.previewId); state = await finish(resumed); assert.equal(state.phase, "complete", state.error); assert.equal(fs.statSync(targetFile).nlink, 1);
 });
@@ -286,10 +302,8 @@ test("network changes without a journal reset the displayed migration state", as
   const f = fixture(t); assert.equal((await begin(f)).phase, "complete"); assert.equal(f.service.status("harbinger").phase, "idle");
 });
 
-test("target changes during the final Docker check preserve the original cross-device source", async t => {
-  const f = fixture(t), link = fsp.link; let injected = 0, originalBytes;
-  fsp.link = async (source, target) => { if (inside(f.basedir, source)) { injected++; throw Object.assign(Error("cross-device"), { code: "EXDEV" }); } return link(source, target); };
-  t.after(() => { fsp.link = link; });
+test("target changes during the final Docker check preserve the original source", async t => {
+  const f = fixture(t); let originalBytes;
   let changed;
   f.onExec(args => {
     if (changed || args[0] !== "ps") return;
@@ -301,7 +315,6 @@ test("target changes during the final Docker check preserve the original cross-d
     fs.writeFileSync(destination, Buffer.alloc(current.bytes, 8)); changed = current.relative;
   });
   const state = await begin(f); assert.equal(state.phase, "failed"); assert.match(state.error, /destination changed/); assert.ok(changed); assert.ok(fs.existsSync(path.join(f.basedir, changed))); assert.equal(state.resumable, true);
-  assert.ok(injected > 0, "Cross-device copy failure must be injected");
   assert.deepEqual(fs.readFileSync(path.join(f.basedir, changed)), originalBytes, "Destination mutation must leave the original source bytes unchanged");
 });
 

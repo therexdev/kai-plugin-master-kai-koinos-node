@@ -71,6 +71,11 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
       runBackground:(_name,run)=>track(spend(run)),
       configureServices(value){
         services=value;
+        (value.nodeMgr.profileContext ||= {}).runExclusive = ctx.withWalletSpend;
+        value.nodeMgr.profileContext.assertReady = () => {
+          if (value.rewards._busy || value.distribution?._busy || [value.bridge,value.routeC].some(flow => { const job=flow.status(); return job && !["done","error"].includes(job.status); })) throw Error("Finish pending Node rewards or funding before migrating its producer profile.");
+        };
+        value.nodeMgr.profileContext.disableAutomations = set => { set("distribution.enabled", false); set("distributionAuthorization", null); };
         value.setup.assertActive=()=>assertActive();
         value.nodeMgr.assertOperation=action=>{if(cleaning&&["down","stop","ps","logs","version","config"].includes(action))return;assertActive();};
         const settings=value.settings, dataRoot=settings.get("node.dataDir",null);
@@ -144,11 +149,12 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
     if(isMutation&&mutation)throw Error("Wait for the current Node operation to finish");
     if(isMutation)mutation=true;
     try {
-      if (channel.startsWith("node:profileMigration") && Object.keys(captured).some(key => key !== "previewId" || channel !== "node:profileMigrationStart")) throw Error("Invalid Node migration request");
+      if (channel.startsWith("node:profileMigration") && Object.keys(captured).some(key => !(channel === "node:profileMigrationStart" && key === "previewId") && !(channel === "node:profileMigrationPreview" && key === "options"))) throw Error("Invalid Node migration request");
       const migrationReview=channel === "node:profileMigrationStart" ? getEngine().nodeMgr.profileMigration().review(reviewedIdentity.network,captured.previewId) : null;
       if (channel === "node:profileMigrationStart") {
-        const detail="Network: "+migrationReview.network+"\nFrom: "+migrationReview.source.basedir+"\nTo: "+migrationReview.destination.basedir+"\n\n"+migrationReview.detail+"\n\nEach verified chain file is removed from its old location. On pause or failure, resume this migration before starting either node.\n\n"+migrationReview.walletNotice;
-        if (!await ctx.confirm("Stop the old Node and migrate chain data?",detail)) return {phase:"idle",cancelled:true,preview:migrationReview};
+        const labels={chain:"Chain data",settings:"Producer settings and custody",signingKey:"Existing production signing key",wallet:"Encrypted local producer wallet"};
+        const detail="Producer: "+(migrationReview.producer?.address||"not selected")+"\nCustody: "+(migrationReview.producer?.mode||"not selected")+"\nPublic signing key: "+(migrationReview.producer?.publicKey||"not selected")+"\nNetwork: "+migrationReview.network+"\nFrom: "+migrationReview.source.basedir+"\nTo: "+migrationReview.destination.basedir+"\n\n"+migrationReview.detail+"\n\nSelected items: "+Object.entries(migrationReview.options||{chain:true}).filter(([,selected])=>selected).map(([name])=>labels[name]||name).join(", ")+". Original files are retained for new copies. On pause or failure, resume this migration before starting either node.\n\n"+migrationReview.walletNotice;
+        if (!await ctx.confirm("Stop the old Node and import selected settings and data?",detail)) return {phase:"idle",cancelled:true,preview:migrationReview};
         assertActive(signal);assertIdentity(reviewedIdentity);
       }
       if ((engine?.nodeMgr?._profileMigrationActive || engine?.nodeMgr?._profileMigration?.status(reviewedIdentity.network)?.resumable) && isMutation && !["node:profileMigrationCancel", "node:profileMigrationStart"].includes(channel)) throw Error("Pause or finish the chain migration before changing Node settings or wallet controls.");

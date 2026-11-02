@@ -17,6 +17,7 @@ function create(api, dependencies = {}) {
   const walletDir = path.join(dataDir, "wallet");
   safePath(walletDir);
   const walletFile = path.join(walletDir, "wallet.json");
+  require("./core/lib/koinos/profile-import").recoverPublished(walletFile);
   if (fs.existsSync(walletFile)) {
     const stat = fs.lstatSync(walletFile);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 1024 * 1024) throw Error("Node wallet storage is unsafe; the file was preserved.");

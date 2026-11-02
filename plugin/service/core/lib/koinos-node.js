@@ -33,7 +33,8 @@ const { compareRoutes, descriptor } = require("./koinos/fund-routes");
 
 /* Complete plugin-owned Koinos Node engine. Its encrypted wallet, chain
  * configuration, funding journals and Docker supervisor live in this plugin
- * profile. It does not open Core or another application's wallet. */
+ * profile. Only an explicitly reviewed legacy migration may read and copy a
+ * legacy encrypted Node wallet; Core wallets are never adopted automatically. */
 
 // The owner's existing onramp relay, shared with Koinos Node Desktop. The app
 // key identifies the app to that endpoint; it is a client-side constant in
@@ -390,7 +391,7 @@ function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards
     return nodeMgr.start(networkId, producerAddress);
   });
 
-  handle("node:profileMigrationPreview", () => nodeMgr.profileMigration().preview(chain.network().id));
+  handle("node:profileMigrationPreview", ({options} = {}) => nodeMgr.profileMigration().preview(chain.network().id, options));
   handle("node:profileMigrationStatus", () => nodeMgr.profileMigration().status(chain.network().id));
   handle("node:profileMigrationStart", ({ previewId } = {}) => nodeMgr.profileMigration().start(chain.network().id, previewId));
   handle("node:profileMigrationCancel", () => nodeMgr.profileMigration().cancel());
@@ -935,7 +936,7 @@ function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards
   // Serialize custody/network/node mutations so asynchronous RPC checks cannot
   // authorize a start, rotation or draft against a different producer context.
   let producerMutation = false;
-  for (const name of ["distribution:configure", "distribution:runNow", "distribution:distributeNow", "distribution:resetStats", "masterApi:configure", "producer:vaultConnect", "producer:vaultUse", "producer:vaultPrepare", "producer:vaultSend", "producer:vaultDisconnect", "producer:vaultStatus", "producer:configure", "producer:key", "producer:prepare", "producer:broadcast", "producer:register", "settings:update", "node:start", "node:stop", "node:repairServices", "chain:burn", "chain:send", "rewards:runNow", "rewards:configure"]) {
+  for (const name of ["distribution:configure", "distribution:runNow", "distribution:distributeNow", "distribution:resetStats", "masterApi:configure", "producer:vaultConnect", "producer:vaultUse", "producer:vaultPrepare", "producer:vaultSend", "producer:vaultDisconnect", "producer:vaultStatus", "producer:configure", "producer:key", "producer:prepare", "producer:broadcast", "producer:register", "settings:update", "node:start", "node:stop", "node:repairServices", "chain:burn", "chain:send", "rewards:runNow", "rewards:configure", "node:profileMigrationStart"]) {
     const fn = channels.get(name);
     if (!fn) continue;
     channels.set(name, async input => {
@@ -1003,6 +1004,8 @@ function createKoinosNode({ dataDir, wallet, appVersion, onEvent = () => {}, sto
       return Number.isSafeInteger(h) && h > 0 ? h : null;
     },
   });
+
+  nodeMgr.profileContext = { settings, state, wallet, chain };
 
   const setup = new SetupService({
     platform: process.platform,

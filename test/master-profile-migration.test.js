@@ -5,7 +5,7 @@ const { createProfileMigration, identifyMasterSource, masterProfileFromRoot } = 
 const { NodeManager } = require("../plugin/service/core/lib/koinos/node-manager");
 const { NETWORKS } = require("../plugin/service/core/lib/koinos/constants");
 const templateRoot = path.resolve(__dirname, "../plugin/service/core/koinos-node-template");
-function fixture(t, { origin = "master", custom = false } = {}) {
+function fixture(t, { origin = "master", custom = false, importProfile = false, custody = "external" } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "kai-master-migration-")));
   const profile = path.join(root, origin === "headless" ? ".master-koinos-ai" : origin === "alpha" ? "Koinos AI" : origin === "core" ? "KAI Core" : "Master Koinos AI Node");
   const dataRoot = path.join(root, "plugin", "node"), core = path.join(profile, ...(origin === "headless" ? [] : ["core"]), "koinos-node");
@@ -32,10 +32,27 @@ function fixture(t, { origin = "master", custom = false } = {}) {
     throw Error(`Unexpected Docker command ${args.join(" ")}`);
   };
   const manager = new NodeManager({ templateRoot, dataRoot, autoRecover: false });
+  let profileContext, address, publicKey;
+  if (importProfile) {
+    const { Signer, utils } = require("../plugin/service/node_modules/koilib");
+    const { JsonStore } = require("../plugin/service/core/lib/store");
+    const { WalletService } = require("../plugin/service/core/lib/wallet");
+    const { encryptKeystore } = require("../plugin/service/core/lib/keystore");
+    const { DEFAULT_SETTINGS } = require("../plugin/service/core/lib/koinos/constants");
+    const account = new Signer({ privateKey: "1".padStart(64, "0") }), hot = new Signer({ privateKey: "2".padStart(64, "0") });
+    address = account.getAddress(); publicKey = utils.encodeBase64url(hot.publicKey);
+    write(path.join(core, "settings.json"), JSON.stringify({ network: "mainnet", producer: { mode: custody, addresses: { mainnet: address } }, node: { autoRecover: true, ...(custom ? { dataDir: path.dirname(source) } : {}) }, distribution: { enabled: true, secretOldRecipients: ["do-not-copy"] }, masterApi: { enabled: true } }));
+    write(path.join(source, "config/config.yml"), `block_producer:\n  producer: ${address}\n`);
+    write(path.join(basedir, "block_producer/private.key"), hot.getPrivateKey("wif") + "\n");
+    write(path.join(basedir, "block_producer/public.key"), publicKey + "\n");
+    if (custody === "local") write(path.join(path.dirname(core), "wallet/wallet.json"), JSON.stringify(encryptKeystore({ privateKeyHex: account.getPrivateKey("hex"), address, password: "original-password" })));
+    profileContext = { settings: new JsonStore(path.join(root, "plugin/settings.json"), DEFAULT_SETTINGS), state: new JsonStore(path.join(root, "plugin/state.json"), {}), wallet: new WalletService(path.join(root, "plugin/wallet")), chain: { clearCache() {} }, disableAutomations(set) { set("distribution.enabled", false); set("distributionAuthorization", null); } };
+    manager.profileContext = profileContext;
+  }
   const make = () => createProfileMigration({ manager }, { exec, claim: () => () => {}, masterProfiles: [profile] });
   service = make();
   t.after(async () => { await service.dispose(); manager.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
-  return { root, profile, core, source, basedir, dataRoot, manager, service, make, calls, write, rows: () => rows, pauseAfterRemove() { pauseAfterRemove = true; } };
+  return { root, profile, core, source, basedir, dataRoot, manager, service, make, calls, write, profileContext, address, publicKey, rows: () => rows, pauseAfterRemove() { pauseAfterRemove = true; } };
 }
 async function finish(service) { const until = Date.now() + 5000; while (service.running && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(service.running, false); return service.status("mainnet"); }
 
@@ -47,14 +64,14 @@ test("Master profile identity accepts exact desktop/headless roots and normalize
   for (const root of ["/home/user/.config/Koinos AI/core/koinos-node/node/mainnet", "/home/user/.koinos-ai/koinos-node/node/mainnet", "/tmp/Master Koinos AI Node backup/core/koinos-node/node/mainnet", "/tmp/Master Koinos AI Node/core/other/node/mainnet", "/tmp/Master Koinos AI Node/core/koinos-node/node/mainnet/nested"]) assert.equal(masterProfileFromRoot(root, "mainnet"), null);
 });
 
-test("Master and headless Master chains are identified, reviewed and transferred without producer keys", async t => {
+test("Master and headless Master chains are identified, reviewed and copied without unselected producer keys", async t => {
   for (const origin of ["master", "headless"]) await t.test(origin, async t => {
     const f = fixture(t, { origin }), preview = await f.service.preview("mainnet");
     assert.equal(preview.source.app, "Master Koinos AI Node"); assert.equal(preview.source.storage, "default");
     f.service.start("mainnet", preview.previewId); const result = await finish(f.service);
     assert.equal(result.phase, "complete", result.error);
     assert.equal(fs.readFileSync(path.join(f.manager.dirs("mainnet").basedir, "chain/database.sst"), "utf8"), "verified chain data");
-    assert.equal(fs.existsSync(path.join(f.basedir, "chain/database.sst")), false);
+    assert.equal(fs.existsSync(path.join(f.basedir, "chain/database.sst")), true);
     assert.equal(fs.readFileSync(path.join(f.basedir, "block_producer/private.key"), "utf8"), "old private key");
     assert.equal(fs.existsSync(path.join(f.manager.dirs("mainnet").basedir, "block_producer/private.key")), false);
   });
@@ -102,4 +119,40 @@ test("paused migration revalidates the saved source as Master before resuming", 
   fs.writeFileSync(file, JSON.stringify(saved));
   const resumed = f.make(); await assert.rejects(resumed.preview("mainnet"), /reviewed Master|Only a verified Master/); await resumed.dispose();
   assert.equal(fs.readFileSync(path.join(f.basedir, "chain/database.sst"), "utf8"), "verified chain data");
+});
+
+
+test("reviewed Master profile preserves external producer and hot key across default and custom storage", async t => {
+  for (const custom of [false, true]) await t.test(custom ? "custom folder" : "default folder", async t => {
+    const f = fixture(t, { custom, importProfile: true });
+    const options = { chain: true, settings: true, signingKey: true, wallet: false };
+    const preview = await f.service.preview("mainnet", options);
+    assert.equal(preview.available, true, preview.selectionError);
+    assert.equal(preview.producer.address, f.address); assert.equal(preview.producer.publicKey, f.publicKey);
+    f.service.start("mainnet", preview.previewId); const result = await finish(f.service);
+    assert.equal(result.phase, "complete", result.error);
+    assert.equal(f.profileContext.settings.get("producer.mode"), "external");
+    assert.equal(f.profileContext.settings.get("producer.addresses.mainnet"), f.address);
+    assert.equal(f.manager.readProducerPublicKey("mainnet").trim(), f.publicKey);
+    assert.equal(fs.readFileSync(path.join(f.manager.dirs("mainnet").producerKeyDir, "private.key"), "utf8"), fs.readFileSync(path.join(f.basedir, "block_producer/private.key"), "utf8"));
+    assert.equal(fs.existsSync(path.join(f.basedir, "chain/database.sst")), true);
+    assert.equal(f.profileContext.wallet.exists(), false);
+    assert.equal(f.profileContext.settings.get("distribution.enabled"), false);
+    assert.equal(f.profileContext.settings.get("distribution.secretOldRecipients"), undefined);
+    assert.equal(f.profileContext.settings.get("masterApi.enabled"), false);
+    assert.equal(f.manager._intent.mainnet.running, false);
+    assert.ok(!JSON.stringify(result).includes(fs.readFileSync(path.join(f.basedir, "block_producer/private.key"), "utf8").trim()));
+  });
+});
+
+test("Master local producer migration imports its encrypted wallet with the original password", async t => {
+  const f = fixture(t, { importProfile: true, custody: "local" });
+  const preview = await f.service.preview("mainnet", { chain: false, settings: true, signingKey: true, wallet: true });
+  assert.equal(preview.available, true, preview.selectionError);
+  f.service.start("mainnet", preview.previewId); const result = await finish(f.service);
+  assert.equal(result.phase, "complete", result.error);
+  assert.equal(f.profileContext.wallet.address, f.address); assert.equal(f.profileContext.wallet.status().unlocked, false);
+  f.profileContext.wallet.unlock("original-password"); assert.equal(f.profileContext.wallet.address, f.address);
+  assert.equal(fs.existsSync(path.join(f.basedir, "chain/database.sst")), true);
+  assert.equal(fs.existsSync(path.join(f.manager.dirs("mainnet").basedir, "chain/database.sst")), false);
 });
