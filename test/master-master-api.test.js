@@ -14,6 +14,15 @@ test("API listener recovers after a temporary port conflict and honors explicit 
   await new Promise(r=>occupied.close(r)); await api.maintain(); assert.equal(api.status().listening,true);
   await api.configure({enabled:false}); await api.maintain(); assert.equal(api.status().listening,false);
 });
+
+test("startup failures before listen remain visible in API status", async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"master-start-error-"));
+  const settings=new JsonStore(path.join(root,"settings.json"),{network:"harbinger",masterApi:{enabled:true}});
+  const api=new MasterNodeApi({root,settings});
+  t.after(async()=>{await api.dispose();fs.rmSync(root,{recursive:true,force:true});});
+  await assert.rejects(api.start(),/requires mainnet/);
+  assert.equal(api.status().listening,false);assert.match(api.status().error,/requires mainnet/);
+});
 function fixture(t,n=3){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"master-index-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const f={root,n,now:Date.now(),chainId:"fixture",fork:"",calls:[]};

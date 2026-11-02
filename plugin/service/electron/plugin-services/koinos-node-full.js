@@ -15,10 +15,10 @@ const REVIEW = new Set([...MANAGE, ...WALLET, ...FUND].filter(name => !["wallet:
 const permissions = Object.freeze({"node.read":"koinos-node.read","node.events":"koinos-node.read","node.language":"koinos-node.read","node.manage":"koinos-node.manage","node.pickFolder":"koinos-node.manage","node.wallet":"koinos-node.wallet","node.fund":"koinos-node.fund","node.exportDraft":"koinos-node.wallet"});
 const groups = {"node.read":READ,"node.manage":MANAGE,"node.wallet":WALLET,"node.fund":FUND};
 const plain = value => value && typeof value === "object" && !Array.isArray(value);
-function safePath(target, file = false) {
+function safePath(target, file = false, maxBytes = 8*1024*1024) {
   const absolute=path.resolve(target), root=path.parse(absolute).root; let current=root;
   for (const part of absolute.slice(root.length).split(path.sep).filter(Boolean)) { current=path.join(current,part); let st; try { st=fs.lstatSync(current); } catch (e) { if (e.code === "ENOENT") continue; throw e; }
-    if (st.isSymbolicLink() || (file && current === absolute ? !st.isFile() || st.nlink !== 1 || st.size > 8*1024*1024 : !st.isDirectory())) throw Error("Node storage is unsafe; the original data was preserved");
+    if (st.isSymbolicLink() || (file && current === absolute ? !st.isFile() || st.nlink !== 1 || st.size > maxBytes : !st.isDirectory())) throw Error("Node storage is unsafe; the original data was preserved");
   }
 }
 const { runOperation } = require("../../core/lib/koinos/operation-lifetime");
@@ -34,10 +34,14 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
   const redactSecrets=text=>String(text).replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,"[private key redacted]").replace(/\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\b/g,"[private key redacted]").replace(/((?:password|passwd|secret|private[_ -]?key|authorization)\s*[=:]\s*)([^\s,;]+)/gi,"$1[redacted]");
   const event = value => {if(closed)return;const text=JSON.stringify(value,(key,item)=>/^(password|passwd|wif|private.?key|secret|authorization)$/i.test(key)?"[redacted]":typeof item==="string"?redactSecrets(item):item);if(text.length>128000)return;events.push({id:++serial,event:JSON.parse(text)});if(events.length>250)events.splice(0,events.length-250);};
   function storeFactory(file, defaults) {
-    safePath(file,true);const store=new GuardedStore(file);store.data=deepMerge(structuredClone(defaults),store.data);
+    // The bounded, rebuildable public index is larger than settings and changes
+    // every few seconds. It must not create unbounded backups or gate the wallet.
+    const publicIndex=file===path.join(root,"master-producer-index.json");
+    const options=publicIndex?{maxBytes:16*1024*1024,backup:false}:undefined;
+    safePath(file,true,options?.maxBytes);const store=new GuardedStore(file,options);store.data=deepMerge(structuredClone(defaults),store.data);
     store.all=()=>{store.assert();return structuredClone(store.data);};store.health=()=>{store.assert();return{ok:true,error:null,recoveredFromBackup:false,backupError:null};};
-    store.reopen=()=>{store.assert();const fresh=new GuardedStore(file);fresh.health=()=>{fresh.assert();return{ok:true};};return fresh;};
-    stores.push(store);return store;
+    store.reopen=()=>{store.assert();const fresh=new GuardedStore(file,options);fresh.health=()=>{fresh.assert();return{ok:true};};return fresh;};
+    if(!publicIndex)stores.push(store);return store;
   }
   function identity() {
     const file=path.join(root,"settings.json");safePath(file,true);

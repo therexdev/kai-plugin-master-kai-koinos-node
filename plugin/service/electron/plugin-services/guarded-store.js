@@ -20,15 +20,16 @@ function redact(value) {
 // Unlike the legacy JsonStore constructor, this never restores or rewrites a
 // corrupt primary merely because a plugin was opened. Unrelated fields survive.
 class GuardedStore {
-  constructor(file) { this.file=file;this.filePath=file; const bytes=readFile(file); this.digest=hash(bytes); try { this.data=bytes ? JSON.parse(bytes) : {}; } catch { throw Error("Saved node settings are unreadable; original data was preserved"); }
+  constructor(file, { maxBytes = 2 * 1024 * 1024, backup = true } = {}) { this.file=file;this.filePath=file;this.maxBytes=maxBytes;this.backup=backup; const bytes=readFile(file,this.maxBytes); this.digest=hash(bytes); try { this.data=bytes ? JSON.parse(bytes) : {}; } catch { throw Error("Saved node settings are unreadable; original data was preserved"); }
     if(!plain(this.data))throw Error("Saved node settings need recovery");
-    if(!bytes && readFile(file+".last-good"))throw Error("Node settings primary is missing. Restore its backup deliberately before using Node");
+    if(!bytes && readFile(file+".last-good",this.maxBytes))throw Error("Node settings primary is missing. Restore its backup deliberately before using Node");
   }
-  assert() { if(hash(readFile(this.file))!==this.digest)throw Error("Node settings changed outside Core. Close and reopen this plugin before editing"); }
+  assert() { if(hash(readFile(this.file,this.maxBytes))!==this.digest)throw Error("Node settings changed outside Core. Close and reopen this plugin before editing"); }
   get(key,fallback) { const value=key.split(".").reduce((o,k)=>plain(o)&&Object.hasOwn(o,k)?o[k]:undefined,this.data);return value===undefined?fallback:value; }
   set(key,value) { this.assert();const next=structuredClone(this.data),parts=key.split("."); if(parts.some(k=>["__proto__","constructor","prototype"].includes(k)))throw Error("Invalid node settings key");let row=next;for(const k of parts.slice(0,-1)){if(!plain(row[k]))row[k]={};row=row[k];}row[parts.at(-1)]=value;
-    fs.mkdirSync(path.dirname(this.file),{recursive:true,mode:0o700});const previous=readFile(this.file); if(previous){ const backup=this.file+".core-backup-"+Date.now()+"-"+crypto.randomBytes(4).toString("hex");fs.writeFileSync(backup,previous,{flag:"wx",mode:0o600});if(!fs.readFileSync(backup).equals(previous))throw Error("Node configuration backup failed"); }
-    const bytes=Buffer.from(JSON.stringify(next,null,2)),temp=this.file+"."+crypto.randomBytes(8).toString("hex")+".tmp";try{
+    const bytes=Buffer.from(JSON.stringify(next,null,2));if(bytes.length>this.maxBytes)throw Error("Node storage exceeds its size limit; original data was preserved");
+    fs.mkdirSync(path.dirname(this.file),{recursive:true,mode:0o700});const previous=readFile(this.file,this.maxBytes); if(previous&&this.backup){ const backup=this.file+".core-backup-"+Date.now()+"-"+crypto.randomBytes(4).toString("hex");fs.writeFileSync(backup,previous,{flag:"wx",mode:0o600});if(!fs.readFileSync(backup).equals(previous))throw Error("Node configuration backup failed"); }
+    const temp=this.file+"."+crypto.randomBytes(8).toString("hex")+".tmp";try{
       const fd=fs.openSync(temp,"wx",0o600);
       try{fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
       this.assert();fs.renameSync(temp,this.file);
