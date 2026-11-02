@@ -57,3 +57,7 @@ Dependencies are locked and bundled by the author. Installation never runs npm o
 Pack `plugin/` using KAI Core's `scripts/core/pack-plugin.js` and the established Ed25519 publisher key. The signed asset is `dist/kai-plugin-master-kai-koinos-node-<version>.kaiplugin`. Large signed assets are committed as bounded parts with exact SHA-256/size metadata; `node scripts/assemble-signed-package.js` restores the original bytes. Assembly cannot create or alter signatures. Run `node scripts/verify-package.js` to verify the signature and exact source/dependency contents before release.
 
 CI tests on Windows, macOS and Linux and publishes only the pre-signed immutable current version after verification. Tests use disposable profiles and synthetic wallet, Docker and RPC fixtures; they do not claim a real node, public tunnel or live financial transaction was exercised.
+
+## Interface language
+
+This plugin follows the language saved in KAI Core Settings and applies changes to open views. English, Spanish, Brazilian Portuguese, French and German are supported through bundled offline catalogs. User content and identifiers stay literal. These source changes require Core 0.7.17+ for the live locale API; release the Core update before publishing a new signed plugin package and catalog entry. See the [public localization API](https://github.com/therexdev/kai-core/blob/main/docs/foundation/PLUGIN_AUTHOR_GUIDE.md#shared-language-and-localization-core-0717).

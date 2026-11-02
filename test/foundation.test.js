@@ -5,7 +5,7 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "kai-node-foundation-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const settings = new Map();
-  return { root, api: { version: 1, plugin: { id: "kai.koinos-node", version: "0.3.0", dataDir: root }, signal: new AbortController().signal, settings: { get: (k, fallback) => settings.has(k) ? settings.get(k) : fallback, set: (k, v) => settings.set(k, v) }, desktop: { hostWindowId: () => 1, confirm: async () => true } }, electron: { BrowserWindow: { fromId: () => ({ id: 1 }) }, dialog: { showMessageBox: async () => ({ response: 0 }) }, app: { getLocale: () => "en" } } };
+  return { root, api: { version: 1, plugin: { id: "kai.koinos-node", version: "0.3.0", dataDir: root }, signal: new AbortController().signal, locale: { get: () => ({ language: "es", selected: true }) }, settings: { get: (k, fallback) => settings.has(k) ? settings.get(k) : fallback, set: (k, v) => settings.set(k, v) }, desktop: { hostWindowId: () => 1, confirm: async () => true } }, electron: { BrowserWindow: { fromId: () => ({ id: 1 }) }, dialog: { showMessageBox: async () => ({ response: 0 }) }, app: { getLocale: () => "en" } } };
 }
 test("service creates a fresh Node wallet using no Core wallet or private feature object", async t => {
   const f = fixture(t), service = create(f.api, { electron: f.electron });
@@ -22,7 +22,8 @@ test("service creates a fresh Node wallet using no Core wallet or private featur
     assert.equal((await service.call("node.read", { channel: "wallet:status" })).address, wallet.address);
     const info = await service.call("node.read", { channel: "app:info" });
     assert.equal(info.version, "0.3.0");
-    const lang = await service.call("node.language", { language: "es" }); assert.equal(lang.language, "es");
+    await assert.rejects(service.call("node.language", { language: "de" }), /Core Settings/);
+    const lang = await service.call("node.language", {}); assert.equal(lang.language, "es");
     await service.call("node.wallet", { channel: "wallet:remove", payload: { password: "synthetic-node-password", confirm: "REMOVE" } });
     const removed = await service.call("node.read", { channel: "wallet:status" }); assert.equal(removed.exists, false); assert.equal(removed.address, null); assert.equal(removed.ethAddress, null);
   } finally { await service.dispose({ reason: "quit" }); }

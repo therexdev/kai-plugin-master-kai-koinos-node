@@ -37,21 +37,22 @@ jobs:
       - name: Verify patched history runtime in a disposable Docker stack
         if: runner.os == 'Linux'
         run: node scripts/master-block-store-smoke.js
-      - name: Checkout the released Core host for native integration tests
+      - name: Checkout the Core host with the shared locale API
         uses: actions/checkout@v4
         with:
           repository: therexdev/kai-core
-          ref: 4a5e8863612496f153002faadc60ac7ec47b8eb8
+          ref: 997a05aa87b6b83e889327e75a087a256a71b21d
           path: .test-core
           persist-credentials: false
       - name: Checkout the ordinary Node plugin for coexistence tests
         uses: actions/checkout@v4
         with:
           repository: therexdev/kai-plugin-koinos-node
-          ref: 88ec1da498f652213f8abbd6263a1359519fb972
+          ref: 89e074972b176ce2d4466d01444a79e767656489
           path: .ordinary-node
+          sparse-checkout: plugin
           persist-credentials: false
-      - name: Prepare the released Electron host
+      - name: Prepare the reviewed Electron host
         working-directory: .test-core
         run: |
           npm ci --ignore-scripts

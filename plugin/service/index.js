@@ -33,7 +33,7 @@ function create(api, dependencies = {}) {
   };
   const service = (dependencies.createNode || createNode)({
     dataDir, wallet, version: api.plugin.version,
-    settings: api.settings, electron, withWalletSpend,
+    settings: api.settings, locale: api.locale, electron, withWalletSpend,
     getWindow: () => electron.BrowserWindow.fromId(api.desktop.hostWindowId()),
     confirm: (title, detail) => api.desktop.confirm(title, detail),
   });

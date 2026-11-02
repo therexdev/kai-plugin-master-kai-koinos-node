@@ -6,6 +6,8 @@ const crypto = require("node:crypto"), assert = require("node:assert/strict");
 const root = path.resolve(__dirname, ".."), coreRoot = path.resolve(process.env.KAI_CORE_SOURCE || path.join(root, "../kai-core"));
 const { _electron: electron } = require(path.join(coreRoot, "node_modules/playwright-core"));
 const electronPath = require(path.join(coreRoot, "node_modules/electron"));
+// Test-only helper: retry lost inspector results only for read-only observations.
+const { waitForInspectorObservation } = require(path.join(coreRoot, "scripts/foundation/inspector-observation"));
 const { signingPayload, BINARY, verifyPackage } = require(path.join(coreRoot, "core/lib/plugins/package"));
 const id = "kai.master-kai-koinos-node", otherId = "kai.koinos-node";
 const views = ["dashboard", "wallet", "fund", "burn", "node", "distribution", "master-api", "returns", "settings"];
@@ -34,7 +36,7 @@ async function main() {
     syntheticProfile: true, syntheticKeychain: true, ephemeralPackageSignatures: true, liveNetwork: false, liveDocker: false,
     checks: [], screenshots: [], failures: [] };
   require(path.join(coreRoot, "electron/foundation-profile")).prepareFoundationProfile(profile);
-  fs.writeFileSync(path.join(profile, "settings.json"), JSON.stringify({ network: { privacyMode: "local-only" }, earn: { autoStart: false } }));
+  fs.writeFileSync(path.join(profile, "settings.json"), JSON.stringify({ interface: { language: "en" }, network: { privacyMode: "local-only" }, earn: { autoStart: false } }));
   const manager = new (require(path.join(coreRoot, "core/lib/plugins/manager")).PluginManager)(profile);
   const key = crypto.generateKeyPairSync("ed25519"), manifest = installSource(manager, path.join(root, "plugin"), key);
   assert.equal(manifest.id, id); assert.equal(manifest.name, "Master KAI Koinos Node");
@@ -56,11 +58,7 @@ async function main() {
     const renderer = global.__foundationHost.renderer(id); if (!renderer) throw Error("Master Node renderer is unavailable");
     return renderer.executeJavaScript(expression, true);
   }, { id, expression });
-  const until = async (predicate, message, timeout = 30000) => {
-    const deadline = Date.now() + timeout;
-    do { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 100)); } while (Date.now() < deadline);
-    throw Error(message);
-  };
+  const until = (predicate, message, timeoutMs = 30000) => waitForInspectorObservation(predicate, { message, timeoutMs });
   const check = async (name, task) => {
     try { await task(); report.checks.push(name); console.log("PASS", name); }
     catch (error) { report.failures.push({ name, error: error.stack || String(error) }); console.error("FAIL", name, error.message); }
@@ -114,14 +112,15 @@ async function main() {
       const dialogs = await application.evaluate(() => global.__foundationSmoke.dialogs);
       assert.ok(dialogs.some(dialog => /review/i.test(dialog.title || "")));
     });
-    if (report.ordinaryNodeInstalled) await check("The regular Node and Master Node have separate saved preferences and data", async () => {
+    if (report.ordinaryNodeInstalled) await check("Node plugins keep separate data while following the shared Core language", async () => {
       assert.notEqual(manager.dataDir(id), manager.dataDir(otherId));
-      await appEval("window.kai.call('node.language',{language:'es'})");
+      await page.evaluate(() => window.kaiCore.locale.set("es"));
+      assert.equal(await appEval("document.documentElement.lang"), "es");
       const status = await application.evaluate(async (_electron, otherId) => {
         const record = await global.__foundationServices.ensure(otherId); return record.service.call("node.language", {});
       }, otherId);
-      assert.notEqual(status.language, "es");
-      await appEval("window.kai.call('node.language',{language:'en'})");
+      assert.equal(status.language, "es");
+      await page.evaluate(() => window.kaiCore.locale.set("en"));
     });
     await check("Master Node stays mounted and keeps ticking through navigation and Core tray", async () => {
       const before = await application.evaluate((_electron, id) => global.__foundationHost.renderer(id).id, id);
