@@ -18,7 +18,7 @@ function hostRequest(url, host) {
     req.on("error", reject);
   });
 }
-async function fixture(t, config = {}) {
+async function fixture(t, config = {}, apiOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "master-public-rpc-"));
   const state = { calls: [], mode: "ok", chain: MAINNET_CHAIN_ID, time: Date.now(), custom: null };
   const node = http.createServer(async (req, res) => {
@@ -38,13 +38,23 @@ async function fixture(t, config = {}) {
   });
   const upstreamPort = await listen(node), probe = http.createServer(), port = await listen(probe); await new Promise(r => probe.close(r));
   const settings = new JsonStore(path.join(root, "settings.json"), { network: "mainnet", masterApi: { enabled: true, port, rpcUrl: `http://127.0.0.1:${upstreamPort}`, ...config } });
-  const api = new MasterNodeApi({ root, settings });
+  const api = new MasterNodeApi({ root, settings, ...apiOptions });
   t.after(async () => { await api.stop(); node.closeAllConnections(); await new Promise(r => node.close(r)); fs.rmSync(root, { recursive: true, force: true }); });
   await api.start(); await api.publicRpc.refreshHealth();
   const url = `http://127.0.0.1:${port}`;
   const post = (body, route = "/", headers = {}) => fetch(url + route, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
   return { api, settings, state, url, post };
 }
+
+test("healthy blockchain RPC remains available when the producer cache cannot open", async t => {
+  const f=await fixture(t,{}, {storeFactory:()=>{throw Error("fixture checkpoint cannot open");}});
+  assert.equal(f.api.status().listening,true);
+  assert.match(f.api.status().producerError,/checkpoint cannot open/);
+  assert.equal((await fetch(f.url+"/healthz/rpc")).status,200);
+  assert.equal((await (await f.post(request("chain.get_head_info"))).json()).result.head_topology.height,"3");
+  assert.equal((await fetch(f.url+"/v1/token-tracker/producers")).status,503);
+  f.settings.set("network","harbinger");await f.api.refresh();assert.equal(f.api.status().listening,false);
+});
 
 test("real HTTP RPC supports koilib, browser CORS and producer routes on the same listener", async t => {
   const f = await fixture(t), provider = createProvider([f.url]);

@@ -113,6 +113,7 @@ class MasterNodeApi {
   constructor({ root, settings, fetchImpl = fetch, storeFactory = (file, defaults) => new JsonStore(file, defaults) }) {
     Object.assign(this, { root, settings, fetchImpl, storeFactory });
     this.disposed = false; this.starting = null; this.refreshing = null; this.healthChecking = null;
+    this.indexStore = null; this.indexError = null;
     this.publicRpc = null; this.server = null; this.timer = null; this.healthTimer = null; this.controller = null; this.index = null; this.payload = null; this.error = null; this.changing = false; this.active = false;
   }
   config() { return validateConfig(this.settings.get("masterApi", {})); }
@@ -122,11 +123,11 @@ class MasterNodeApi {
     return { network: "mainnet", source: "Master KAI Koinos Node", sourceUrl: this.status().producerUrl,
       trackedScope: "producers-in-finalized-window", available, stale: !available, fetchedAt: p?.updated_at || null,
       ...(available ? summarizeProducers(p) : {}),
-      error: available ? null : this.error || p?.error || "Local producer index is not ready" };
+      error: available ? null : this.error || this.indexError || p?.error || "Local producer index is not ready" };
   }
   status() {
     const cfg = this.config();
-    return { config: cfg, listening: !!this.server?.listening, bind: "127.0.0.1", error: this.error,
+    return { config: cfg, listening: !!this.server?.listening, starting: !!this.starting, bind: "127.0.0.1", error: this.error, producerError: this.indexError || this.payload?.error || null,
       summary: this.payload ? { ...this.payload, producers: undefined } : null,
       rpc: this.publicRpc?.status() || { ready: false },
       rpcUrl: `http://127.0.0.1:${cfg.port}/`, publicRpcUrl: cfg.publicUrl,
@@ -145,8 +146,9 @@ class MasterNodeApi {
     } finally { this.changing = false; }
   }
   async refresh() {
-    if (!this.active || !this.index) return;
+    if (!this.active) return;
     if (this.settings.get("network","mainnet") !== "mainnet") { await this.stop({ skipRefresh: true }); this.error = "Mainnet selection changed; API stopped."; return; }
+    if (!this.index) return;
     const index = this.index;
     const value = await index.refresh();
     if (this.active && this.index === index) this.payload = value;
@@ -159,7 +161,11 @@ class MasterNodeApi {
   start() {
     if (this.disposed) return Promise.reject(new Error("Master Node API is closing."));
     if (this.starting) return this.starting;
-    const work = this._start();
+    const work = this._start().catch(async error => {
+      this.error = error.message;
+      await this.stop();
+      throw error;
+    });
     this.starting = work;
     work.finally(() => { if (this.starting === work) this.starting = null; }).catch(() => {});
     return work;
@@ -168,7 +174,17 @@ class MasterNodeApi {
     const cfg = this.config(); if (!cfg.enabled || this.server) return;
     if (this.settings.get("network","mainnet") !== "mainnet") throw new Error("Master API requires mainnet.");
     this.controller = new AbortController(); const signal = this.controller.signal;
-    this.index = new ProducerIndex({ store: this.storeFactory(path.join(this.root,"master-producer-index.json"), {}), call: async (method,params) => { signal.throwIfAborted(); const value = await rpc(cfg.rpcUrl,method,params,{ fetchImpl: this.fetchImpl, signal }); signal.throwIfAborted(); return value; } });
+    this.indexError = null;
+    try {
+      // Keep one guarded store across reconfiguration, so old digest snapshots
+      // cannot reject writes made by the new index. Cache failure is independent
+      // of the blockchain RPC listener; preserve the file and report it separately.
+      this.indexStore ??= this.storeFactory(path.join(this.root,"master-producer-index.json"), {});
+      this.index = new ProducerIndex({ store: this.indexStore, call: async (method,params) => { signal.throwIfAborted(); const value = await rpc(cfg.rpcUrl,method,params,{ fetchImpl: this.fetchImpl, signal }); signal.throwIfAborted(); return value; } });
+    } catch (error) {
+      this.index = null; this.indexStore = null;
+      this.indexError = `Producer index unavailable: ${error.message}`;
+    }
     this.publicRpc = new PublicRpc({ url: cfg.rpcUrl, fetchImpl: this.fetchImpl, signal,
       network: () => this.settings.get("network", "mainnet"), optionalServices: () => cfg.extendedIndexes,
       metadataFallback: () => cfg.rpcEnabled && cfg.metadataFallback });

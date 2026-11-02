@@ -106,3 +106,44 @@ test("Node API requires native opt-in and plugin disposal releases its loopback 
     await new Promise((resolve, reject) => probe.once("error", reject).listen(port, "127.0.0.1", resolve)); await new Promise(r => probe.close(r));
   } finally { probe.close(); await f.close(); }
 });
+
+test("a full producer window survives API startup, writes and reconfiguration without blocking plugin reads", async () => {
+  const f = fixture(), probe = http.createServer();
+  await new Promise(r => probe.listen(0, "127.0.0.1", r)); const port = probe.address().port; await new Promise(r => probe.close(r));
+  const root = path.join(f.dir, "koinos-node"), file = path.join(root, "master-producer-index.json");
+  const id = height => "0x1220" + BigInt(height).toString(16).padStart(64, "0");
+  const blocks = Array.from({ length: 28800 }, (_, i) => ({ height: 40000000 + i, timestamp: Date.now(), id: id(40000000 + i), previous: id(39999999 + i), signer: f.wallet.address }));
+  const checkpoint = { version: 1, chainId: "fixture", blocks };
+  fs.writeFileSync(file, JSON.stringify({ index: checkpoint }, null, 2));
+  assert.ok(fs.statSync(file).size > 8 * 1024 * 1024);
+  try {
+    const start = () => f.service.call("node.manage", { channel: "masterApi:configure", payload: { enabled: true, port } });
+    assert.equal((await start()).listening, true);
+    const originalStore = f.services.masterApi.index.store;
+    assert.equal(f.services.masterApi.index.blocks.length, 28800);
+    originalStore.set("index", checkpoint);
+    assert.equal((await start()).listening, true);
+    assert.equal(f.services.masterApi.index.store, originalStore);
+    f.services.masterApi.index.store.set("index", checkpoint);
+    assert.equal((await f.service.call("node.read", { channel: "masterApi:status" })).listening, true);
+    assert.equal((await f.service.call("node.read", { channel: "app:info" })).settings.masterApi.enabled, true);
+    assert.equal(fs.readdirSync(root).filter(name => name.startsWith("master-producer-index.json.core-backup-")).length, 0);
+    const local = await fetch(`http://127.0.0.1:${port}/v1/status`);
+    assert.equal(local.status, 200);
+    assert.equal((await local.json()).source, "Master KAI Koinos Node");
+  } finally { await f.close(); }
+});
+
+test("an unreadable producer checkpoint is preserved and does not stop the API or plugin reads", async () => {
+  const f = fixture(), probe = http.createServer();
+  await new Promise(r => probe.listen(0, "127.0.0.1", r)); const port = probe.address().port; await new Promise(r => probe.close(r));
+  const file = path.join(f.dir, "koinos-node", "master-producer-index.json"), original = "unreadable public checkpoint";
+  fs.writeFileSync(file, original);
+  try {
+    const status = await f.service.call("node.manage", { channel: "masterApi:configure", payload: { enabled: true, port } });
+    assert.equal(status.listening, true); assert.match(status.producerError, /Producer index unavailable.*unreadable/);
+    assert.equal(fs.readFileSync(file, "utf8"), original);
+    await f.service.call("node.read", { channel: "app:info" });
+    assert.equal((await fetch(`http://127.0.0.1:${port}/v1/status`)).status, 200);
+  } finally { await f.close(); }
+});

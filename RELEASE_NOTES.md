@@ -1,4 +1,12 @@
-# Master KAI Koinos Node 0.1.3
+# Master KAI Koinos Node 0.1.4
+
+Fixes Node API startup with a full producer-history cache. The public cache has a bounded 16 MiB allowance, reuses its guarded store when API settings are saved, and no longer creates a backup on every indexing refresh. Settings and financial journals retain their existing protections. Existing cache files and backups are preserved.
+
+An unreadable producer cache is reported separately while blockchain RPC remains available. Startup errors stay visible in endpoint status. The Node API page distinguishes a disabled saved setting from a stopped listener and local RPC readiness, and keeps save errors visible below the button.
+
+Requires KAI Core 0.7.17 or newer. This update retains the shared language setting and distribution safeguards from previous releases. Validation uses disposable profiles and synthetic local RPC services; no live funds are moved.
+
+## Master KAI Koinos Node 0.1.3
 
 Follows the language saved in Core Settings, including changes to open views. Supports English, Spanish, Brazilian Portuguese, French and German with offline catalogs. Core owns the first-run choice; plugin content and identifiers stay literal. Requires Core 0.7.17 or newer.
 

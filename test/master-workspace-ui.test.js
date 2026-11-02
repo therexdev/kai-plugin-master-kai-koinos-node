@@ -128,9 +128,29 @@ test("Node API settings preserve unsaved inputs on failure and apply only the ac
   context.$("#ma-public").value = " https://node.example.com "; context.$("#ma-rpc").value = "http://127.0.0.1:8085"; context.$("#ma-port").value = "41110";
   await context.$("#ma-save").listeners.click();
   assert.equal(context.S.appInfo.settings.masterApi, previous); assert.equal(notices.at(-1)[0], "API port is already in use");
+  assert.equal(context.$("#ma-save-result").textContent, "API port is already in use");
+  assert.equal(context.$("#ma-save").disabled, false);
   assert.equal(context.$("#ma-enabled").checked, true); assert.equal(context.$("#ma-public").value, " https://node.example.com ");
   fail = false; await context.$("#ma-save").listeners.click();
   assert.equal(calls.length, 2); assert.equal(calls[1][1].port, 41110); assert.equal(calls[1][1].publicUrl, "https://node.example.com");
   assert.equal(calls[1][1].metadataFallback, false); assert.equal(context.S.appInfo.settings.masterApi.extendedIndexes, true);
   assert.match(notices.at(-1)[0], /Stop and start the node/);
+});
+
+test("API status distinguishes saved opt-in, listener failure and local RPC health", async () => {
+  const nodes=new Map();let status={config:{enabled:false,rpcEnabled:true},listening:false,rpc:{ready:false}};
+  const context=vm.createContext({fmtTime:String,$:selector=>{if(!nodes.has(selector))nodes.set(selector,element());return nodes.get(selector);},call:async()=>status});
+  vm.runInContext(apiView,context);context.$("#ma-enabled").checked=true;
+  await context.refreshMasterApi();
+  assert.match(context.$("#ma-status").textContent,/disabled in saved settings/);
+  assert.match(context.$("#ma-status").textContent,/Save API settings to apply it/);
+  assert.doesNotMatch(context.$("#ma-status").textContent,/fresh Mainnet|index is starting/);
+  status={...status,config:{enabled:true,rpcEnabled:true},error:"API port is already in use"};
+  await context.refreshMasterApi();
+  assert.match(context.$("#ma-status").textContent,/RPC ready: no — API listener is not running/);
+  assert.match(context.$("#ma-status").textContent,/API port is already in use/);
+  status={...status,listening:true,error:null,rpc:{ready:true},producerError:"Producer index unavailable: unreadable checkpoint"};
+  await context.refreshMasterApi();
+  assert.match(context.$("#ma-status").textContent,/RPC ready: yes/);
+  assert.match(context.$("#ma-status").textContent,/Producer index unavailable: unreadable checkpoint/);
 });
