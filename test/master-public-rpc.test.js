@@ -115,7 +115,15 @@ test("public RPC refuses admin methods, unsafe system calls, malformed parameter
   assert.equal((await f.post(request("chain.get_chain_id"), "/", { "content-type": "text/plain" })).status, 415);
   const malformed = await fetch(f.url, { method: "POST", headers: { "content-type": "application/json" }, body: "{" });
   assert.equal((await malformed.json()).error.code, -32700);
-  const large = await f.post({ data: "x".repeat(MAX_BODY) }); assert.equal(large.status, 413);
+  // Check early Content-Length rejection without racing a multi-megabyte upload
+  // against the server's deliberate connection close (ECONNRESET on macOS).
+  const large = await new Promise((resolve, reject) => {
+    const req = http.request(f.url, { method: "POST", headers: { "content-type": "application/json", "content-length": MAX_BODY + 12 } }, res => {
+      res.resume(); res.on("end", () => resolve(res.statusCode));
+    });
+    req.once("error", reject); req.setTimeout(2000, () => req.destroy(Error("Oversized headers were not rejected promptly"))); req.end();
+  });
+  assert.equal(large, 413);
 });
 
 test("JSON-RPC batches, notifications and IDs remain compatible while batch work is bounded", async t => {
