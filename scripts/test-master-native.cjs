@@ -34,7 +34,7 @@ async function main() {
     syntheticProfile: true, syntheticKeychain: true, ephemeralPackageSignatures: true, liveNetwork: false, liveDocker: false,
     checks: [], screenshots: [], failures: [] };
   require(path.join(coreRoot, "electron/foundation-profile")).prepareFoundationProfile(profile);
-  fs.writeFileSync(path.join(profile, "settings.json"), JSON.stringify({ network: { privacyMode: "local-only" }, earn: { autoStart: false } }));
+  fs.writeFileSync(path.join(profile, "settings.json"), JSON.stringify({ interface: { language: "en" }, network: { privacyMode: "local-only" }, earn: { autoStart: false } }));
   const manager = new (require(path.join(coreRoot, "core/lib/plugins/manager")).PluginManager)(profile);
   const key = crypto.generateKeyPairSync("ed25519"), manifest = installSource(manager, path.join(root, "plugin"), key);
   assert.equal(manifest.id, id); assert.equal(manifest.name, "Master KAI Koinos Node");
@@ -114,14 +114,15 @@ async function main() {
       const dialogs = await application.evaluate(() => global.__foundationSmoke.dialogs);
       assert.ok(dialogs.some(dialog => /review/i.test(dialog.title || "")));
     });
-    if (report.ordinaryNodeInstalled) await check("The regular Node and Master Node have separate saved preferences and data", async () => {
+    if (report.ordinaryNodeInstalled) await check("Node plugins keep separate data while following the shared Core language", async () => {
       assert.notEqual(manager.dataDir(id), manager.dataDir(otherId));
-      await appEval("window.kai.call('node.language',{language:'es'})");
+      await page.evaluate(() => window.kaiCore.locale.set("es"));
+      assert.equal(await appEval("document.documentElement.lang"), "es");
       const status = await application.evaluate(async (_electron, otherId) => {
         const record = await global.__foundationServices.ensure(otherId); return record.service.call("node.language", {});
       }, otherId);
-      assert.notEqual(status.language, "es");
-      await appEval("window.kai.call('node.language',{language:'en'})");
+      assert.equal(status.language, "es");
+      await page.evaluate(() => window.kaiCore.locale.set("en"));
     });
     await check("Master Node stays mounted and keeps ticking through navigation and Core tray", async () => {
       const before = await application.evaluate((_electron, id) => global.__foundationHost.renderer(id).id, id);

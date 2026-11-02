@@ -1,7 +1,3 @@
 "use strict";
-// Keep the same desktop language preference when Node moves to its own origin.
-window.kaiLanguageBridge = Object.freeze({
-  save: language => window.kai.call("node.language", { language }),
-  get: () => window.kai.call("node.language", {}),
-  onChanged: callback => window.kai.onEvent?.("shell:language-changed", callback) || (() => {}),
-});
+// Legacy UI adapter; Core remains the only owner of the saved language.
+window.kaiLanguageBridge = Object.freeze({ get: () => window.kai.locale.get(), onChanged: callback => window.kai.locale.onChange(callback) });

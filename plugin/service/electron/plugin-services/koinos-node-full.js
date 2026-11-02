@@ -122,7 +122,7 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
   }
   async function call(method,input={},signal) {
     assertActive(signal);if(!plain(input))throw Error("Invalid Node request");
-    if(method==="node.language"){if(Object.keys(input).some(key=>key!=="language"))throw Error("Invalid language preference");const i18n=require("../../../i18n");if(input.language!==undefined){const language=i18n.normalize(input.language);if(!language)throw Error("Choose a supported language");ctx.settings.set("interfaceLanguage",language);}const saved=i18n.normalize(ctx.settings.get("interfaceLanguage"));return{language:saved||i18n.detect(ctx.electron.app?.getPreferredSystemLanguages?.()||[ctx.electron.app?.getLocale?.()||"en"]),selected:!!saved};}
+    if(method==="node.language"){if(Object.keys(input).length)throw Error("Change the shared language in Core Settings");return ctx.locale.get();}
     if(method==="node.events"){const after=input.after??0;if(!Number.isSafeInteger(after)||after<0)throw Error("Invalid event cursor");return{cursor:serial,events:events.filter(e=>e.id>after)};}
     if(method==="node.exportDraft") {
       if(Object.keys(input).length)throw Error("Draft export takes no caller file path or contents");

@@ -11,7 +11,6 @@
     { code: 'de', name: 'Deutsch' },
   ];
   const supported = new Set(languages.map(l => l.code));
-  const storageKey = 'kai-interface-language';
   const normalize = value => {
     if (typeof value !== 'string') return null;
     const tag = value.trim().replace(/_/g, '-').toLowerCase();
@@ -25,9 +24,8 @@
     }
     return 'en';
   };
-  let preference = null;
-  try { preference = normalize(root.localStorage?.getItem(storageKey)); } catch { /* restricted storage */ }
-  let locale = preference || detect(root.navigator?.languages || [root.navigator?.language]);
+  // Core IPC supplies the saved preference; HTTP origins change between launches.
+  let locale = detect(root.navigator?.languages || [root.navigator?.language]);
   const descriptors = new Map();
   const normalizeText = text => String(text).replace(/\s+/g, ' ').trim();
   const interpolate = (text, values = []) => text.replace(/\{(\d+)\}/g, (match, n) => n < values.length ? String(values[n]) : match);
@@ -55,6 +53,7 @@
   }
   function setText(node, source) {
     if (!node) return;
+    if (source && source.literal === true) { descriptors.get(node)?.delete(null); const value = String(source.value ?? ''); if (node.textContent !== value) node.textContent = value; return; }
     // Only callers at interface-text sinks use this API. No DOM-wide matching
     // of user messages, files, model output, names, keys or addresses.
     if (source == null || source === '') { descriptors.get(node)?.delete(null); node.textContent = ''; return; }
@@ -64,14 +63,10 @@
   function message(strings, ...values) {
     return { source: strings.reduce((text, part, i) => text + part + (i < values.length ? `{${i}}` : ''), ''), values };
   }
-  function setLanguage(value, { persist = false } = {}) {
+  function setLanguage(value) {
     const next = normalize(value);
     if (!next) throw new Error('Unsupported interface language');
     locale = next;
-    if (persist) {
-      preference = next;
-      try { root.localStorage?.setItem(storageKey, next); } catch { /* desktop IPC remains authoritative */ }
-    }
     if (root.document) {
       root.document.documentElement.lang = next;
       root.document.documentElement.dir = 'ltr';
@@ -171,9 +166,8 @@
       }
     });
     observer.observe(root.document.body, { childList: true, subtree: true });
-    root.addEventListener('storage', event => { if (event.key === storageKey && normalize(event.newValue)) setLanguage(event.newValue); });
   }
   if (root.document?.body) start();
-  return { languages, normalize, detect, t: translate, html, message, setText, setLanguage, registerStatic, registerMarkers,
-    get language() { return locale; }, get preference() { return preference; }, storageKey };
+  return { languages, normalize, detect, t: translate, html, message, literal: value => ({ literal: true, value }), setText, setLanguage, registerStatic, registerMarkers,
+    get language() { return locale; } };
 });
