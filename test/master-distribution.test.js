@@ -1620,3 +1620,80 @@ test("guarded distribution persistence flushes intent before transport", async t
   assert.equal(w.calls.transfers.length, 1);
   assert.equal(new w.GuardedStore(w.file).get(w.key).inFlight, null);
 });
+
+const trackedIdentity = { txId: "0x1220" + "ab".repeat(32), chainId: "synthetic-chain", nonce: "KAE" };
+
+test("proven preflight failure keeps every queued amount and allows a later successful retry", async t => {
+  const w = recoveryWorld(t); let attempts = 0;
+  w.engine.chain.submitDistribution = async (_signer, _action, record) => {
+    if (++attempts === 1) throw Object.assign(Error("Insufficient mana before submission"), { distributionNotBroadcast: true });
+    await record(trackedIdentity);
+    return { txId: trackedIdentity.txId, confirmed: true };
+  };
+  let result = await w.engine.tick("manual");
+  assert.match(result.last.message, /was not submitted.*Insufficient mana/);
+  assert.equal(result.derived.inFlight, null);
+  assert.equal(result.derived.queue.payoutTotal, KOIN(5));
+  assert.equal(result.derived.reconciledActions[0].disposition, "not-broadcast");
+  w.engine.state = new w.GuardedStore(w.file);
+  result = await w.engine.tick("manual");
+  assert.equal(attempts, 2); assert.equal(result.derived.queue.empty, true);
+  assert.equal(result.derived.actions.length, 1);
+});
+
+test("tracked submission records identity durably and preserves it after response loss and restart", async t => {
+  const w = recoveryWorld(t); let attempts = 0;
+  w.engine.chain.submitDistribution = async (_signer, _action, record) => {
+    attempts++;
+    assert.equal(new w.GuardedStore(w.file).get(w.key).inFlight.phase, "preparing");
+    await record(trackedIdentity);
+    const saved = new w.GuardedStore(w.file).get(w.key).inFlight;
+    assert.equal(saved.phase, "broadcast"); assert.equal(saved.txId, trackedIdentity.txId);
+    throw Object.assign(Error("response lost"), { distributionNotBroadcast: false });
+  };
+  await w.engine.tick("manual");
+  w.engine.state = new w.GuardedStore(w.file);
+  w.engine.start();
+  assert.equal(w.engine.status().running, false);
+  const result = await w.engine.tick("manual");
+  assert.equal(attempts, 1); assert.equal(result.derived.queue.payoutTotal, KOIN(5));
+  assert.equal(result.derived.inFlight.txId, trackedIdentity.txId);
+  assert.match(result.last.message, /Original error: response lost/);
+});
+
+test("restart before the tracked broadcast boundary releases only the unsent attempt", async t => {
+  const w = recoveryWorld(t), st = w.engine._readState(w.key);
+  st.inFlight = { kind: "payout", address: A, amountSat: KOIN(5), wallet: SELF, network: "mainnet",
+    journalVersion: 1, phase: "preparing", startedAt: Date.now() };
+  w.engine.state.set(w.key, st); w.engine.state = new w.GuardedStore(w.file);
+  w.engine.start();
+  assert.equal(w.engine.status().running, true);
+  const result = await w.engine.tick("manual");
+  assert.equal(result.last.outcome, "not-submitted"); assert.equal(result.derived.inFlight, null);
+  assert.equal(result.derived.queue.payoutTotal, KOIN(5));
+  assert.deepEqual(w.calls, { burns: [], transfers: [] });
+});
+
+test("legacy pending attempts without transaction IDs are never inferred unsent from error text", async t => {
+  const w = recoveryWorld(t), st = w.engine._readState(w.key);
+  st.inFlight = { kind: "reburn", amountSat: KOIN(5), wallet: SELF, network: "mainnet",
+    startedAt: Date.now(), error: "Not enough mana to send a transaction" };
+  w.engine.state.set(w.key, st);
+  const result = await w.engine.tick("manual");
+  assert.deepEqual(result.derived.inFlight, { ...st.inFlight, active: false });
+  assert.match(result.last.message, /No transaction ID was saved/);
+  assert.match(result.last.message, /Original error: Not enough mana/);
+  assert.deepEqual(w.calls, { burns: [], transfers: [] });
+});
+
+test("a completion write failure retains the pre-broadcast transaction ID for recovery", async t => {
+  const w = recoveryWorld(t); let sent = false;
+  w.engine.chain.submitDistribution = async (_signer, _action, record) => {
+    await record(trackedIdentity); sent = true; return { txId: trackedIdentity.txId, confirmed: true };
+  };
+  const set = w.engine.state.set.bind(w.engine.state);
+  w.engine.state.set = (key, value) => { if (sent) throw Error("disk full after send"); return set(key, value); };
+  await assert.rejects(w.engine.tick("manual"), /disk full after send/);
+  const pending = new w.GuardedStore(w.file).get(w.key).inFlight;
+  assert.equal(pending.txId, trackedIdentity.txId); assert.equal(pending.phase, "broadcast");
+});

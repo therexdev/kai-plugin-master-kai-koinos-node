@@ -8,6 +8,24 @@ const MAINNET_RPC_URLS = Object.freeze([
   "https://api.koinos.io",
 ]);
 const RPC_TIMEOUT_MS = 12000;
+const READ_METHODS = new Set([
+  "chain.get_chain_id", "chain.get_head_info", "chain.get_account_nonce", "chain.get_account_rc",
+  "chain.read_contract", "block_store.get_blocks_by_id", "block_store.get_blocks_by_height",
+  "transaction_store.get_transactions_by_id", "account_history.get_account_history",
+]);
+
+function isReadTimeout(method, params, error) {
+  // A backend can report its own timeout in a successful HTTP response. Only
+  // known reads may fail over on that reply; it says nothing about whether a
+  // submitted transaction reached the chain. Do not retry arbitrary syscalls.
+  const read = READ_METHODS.has(method) || method === "chain.invoke_system_call" &&
+    params?.id === undefined && ["get_contract_address", "get_contract_metadata"].includes(params?.name);
+  if (!read) return false;
+  let data = error.data;
+  if (typeof data === "string") { try { data = JSON.parse(data); } catch { /* plain RPC detail */ } }
+  return [error.message, data, data?.error, data?.message].some(message =>
+    typeof message === "string" && /^request timeout(?::\s*\S+)?$/i.test(message.trim()));
+}
 
 function uniqueUrls(urls) {
   const seen = new Set();
@@ -75,9 +93,10 @@ class FailoverProvider extends Provider {
       }
       if (reply.error) {
         lastError = rejection(reply.error);
-        // An RPC may omit account-history or another service. Contract/chain
-        // rejections are final; changing providers cannot fix a rejected spend.
-        if (reply.error.code === -32601) continue;
+        // An RPC may omit a service or time out while answering a read.
+        // Submission rejections and uncertain replies retain their existing
+        // failure path; read failover never authorizes another payment.
+        if (reply.error.code === -32601 || isReadTimeout(method, params, reply.error)) continue;
         throw lastError;
       }
       this.currentNodeId = i;

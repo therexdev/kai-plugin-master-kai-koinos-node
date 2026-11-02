@@ -84,6 +84,32 @@ test("an uncertain distribution transaction shows a reconciliation warning witho
   context.patchDistributionView(); assert.doesNotMatch(status.innerHTML, /unknown result/);
 });
 
+test("copying recovery details includes the original error but excludes unrelated journals and keys", async () => {
+  const f = distributionContext();
+  f.state.distribution = { address: "public-wallet", network: "mainnet", secret: "do not copy",
+    derived: { inFlight: { kind: "reburn", amountSat: "500000000", error: "RPC response lost", txId: "public-tx",
+      privateKey: "do not copy", signatures: ["do not copy"], transaction: { secret: "do not copy" } },
+      queue: { reburnOwed: "500000000", payoutTotal: "100000000", payouts: [{ address: "unrelated recipient" }] },
+      history: ["unrelated history"] } };
+  await f.context.copyDistributionRecoveryDetails();
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], "util:copy");
+  const output = JSON.parse(f.calls[0][1].text);
+  assert.equal(output.pending.error, "RPC response lost"); assert.equal(output.pending.txId, "public-tx");
+  assert.equal(output.queue.payoutCount, 1);
+  assert.doesNotMatch(f.calls[0][1].text, /do not copy|unrelated/);
+  assert.ok(f.state.distribution.derived.inFlight);
+});
+
+test("the status distinguishes a provably unsent interrupted attempt from an unknown result", () => {
+  const status = element(), S = { distribution: { config: { enabled: true, sharePct: {}, recipients: [] },
+    derived: { inFlight: { active: false, journalVersion: 1, phase: "preparing", kind: "reburn", amountSat: "500000000" } } } };
+  const context = vm.createContext({ S, $: selector => selector === "#di-status" ? status : null,
+    esc: String, sym: () => "KOIN", fmtTime: String, fmtSat: String, shortTx: String });
+  vm.runInContext(distribution, context); context.patchDistributionView();
+  assert.match(status.innerHTML, /stopped before submission/); assert.doesNotMatch(status.innerHTML, /unknown result/);
+  assert.match(status.innerHTML, /Copy recovery details/);
+});
+
 test("Node API settings preserve unsaved inputs on failure and apply only the accepted service configuration", async () => {
   const nodes = new Map(), calls = [], notices = [], previous = { enabled: false, extendedIndexes: false };
   let fail = true;

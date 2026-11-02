@@ -17,6 +17,16 @@ The nine sections are **Dashboard**, **Wallet**, **Fund node**, **Burn KOIN → 
 
 Distribution and Node API start disabled. Enabling distribution requires the plugin wallet and an explicit action review. Automated payouts require the wallet to remain unlocked. Distribution and Reward returns cannot spend the same rewards at the same time.
 
+### Distribution transaction recovery
+
+The percentage settings divide **profit after replacing consumed VHP**. A 100% profit allocation still reburns consumed VHP first. A cycle appearing in history means the amounts were queued, not that every transaction succeeded.
+
+A failed preparation before submission keeps the queue available for retry. An uncertain result after submission blocks another payment and preserves the queued amounts. Distribution shows the original error, the pending amount, **Copy recovery details**, and a transaction link when its ID is known. Recovery details include only the pending distribution attempt and queue totals, not wallet keys or other feature journals.
+
+Older versions may have saved no transaction ID. Upgrading cannot prove those attempts failed. Before resetting or changing the queue, inspect the original error and the blockchain. On an older installation, open **Node settings**, scroll to **Files live in**, click **open**, then open `state.json` read-only and locate `distribution` → the selected network → your Node wallet address → `inFlight`. Share only that object's error and transaction details when requesting support; do not edit the file or share wallet files.
+
+**Reset Stats** deliberately discards pending amounts and history; it is not a transaction retry or automatic recovery tool. An empty Wallet History alone is not proof that an uncertain transaction was never sent.
+
 ## Independent storage and lifecycle
 
 The plugin ID is `kai.master-kai-koinos-node`. Core supplies a separate data directory for its encrypted wallet, settings, chain state and journals. Nothing automatically imports or overwrites a regular Node plugin's or legacy application's wallet, producer keys, chain database or distribution records.

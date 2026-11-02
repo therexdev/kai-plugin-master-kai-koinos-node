@@ -82,7 +82,7 @@ function renderDistributionView() {
     </div>
     <div class="card">
       <h2>🧾 Distribution cycles</h2>
-      <table><thead><tr><th>Closed</th><th>Profit</th><th>Reburned</th><th>Allocated payouts</th><th>Recipients</th><th>Kept</th><th>Carried</th></tr></thead>
+      <table><thead><tr><th>Closed</th><th>Profit</th><th>Queued reburn</th><th>Allocated payouts</th><th>Recipients</th><th>Kept</th><th>Carried</th></tr></thead>
       <tbody id="di-history"></tbody></table>
     </div>
     <div class="card">
@@ -293,7 +293,8 @@ const DISTRIBUTION_OUTCOME_LABELS = {
   "cycle-held": ["pill warn", "held — roster unavailable"],
   distributing: ["pill accent", "paying out…"],
   distributed: ["pill good", "all paid out"],
-  "tx-error": ["pill bad", "tx failed"],
+  "tx-error": ["pill warn", "transaction needs attention"],
+  "not-submitted": ["pill warn", "not submitted"],
   "invalid-config": ["pill bad", "check settings"],
 };
 
@@ -345,6 +346,29 @@ function splitRows(split, creditCounts) {
   ].join("");
 }
 
+function distributionRecoveryDetails(r) {
+  const p = r?.derived?.inFlight;
+  if (!p) return null;
+  // Only this distribution attempt; never copy the full state, wallet files,
+  // configuration, keys, signed transactions, or other feature journals.
+  return {
+    schema: 1, kind: "distribution-recovery", network: r.network, wallet: r.address,
+    pending: Object.fromEntries(["kind", "address", "amountSat", "wallet", "network", "startedAt",
+      "txId", "chainId", "nonce", "phase", "journalVersion", "error"].filter(k => p[k] !== undefined).map(k => [k, p[k]])),
+    queue: { reburnOwed: r.derived.queue?.reburnOwed, payoutTotal: r.derived.queue?.payoutTotal,
+      payoutCount: r.derived.queue?.payouts?.length },
+  };
+}
+
+async function copyDistributionRecoveryDetails() {
+  const details = distributionRecoveryDetails(S.distribution);
+  if (!details) return;
+  try {
+    await call("util:copy", { text: JSON.stringify(details, null, 2) });
+    toast("Recovery details copied. Your queued amounts are unchanged.", "good");
+  } catch (e) { toast(e.message, "bad"); }
+}
+
 function patchDistributionView() {
   const statusEl = $("#di-status");
   if (!statusEl) return;
@@ -354,12 +378,19 @@ function patchDistributionView() {
   const c = d?.cycle;
   const q = d?.queue;
   const last = r.last;
+  const pending = d?.inFlight;
+  const neverBroadcast = pending?.journalVersion === 1 && pending.phase === "preparing" && !pending.txId;
   const [pillClass, pillLabel] = last ? DISTRIBUTION_OUTCOME_LABELS[last.outcome] ?? ["pill", last.outcome] : ["pill", "no checks yet"];
   // The roster is only read — and only worth reporting on — while a pool that
   // depends on it is funded.
   const aiActive = pct(r.config.sharePct?.ai) > 0 || pct(r.config.sharePct?.both) > 0;
   statusEl.innerHTML = `
-    ${d?.inFlight && !d.inFlight.active ? `<div class="banner bad" role="alert">A distribution transaction has an unknown result. Automatic payouts are paused. Check Wallet History or the block explorer before using Reset Stats.</div>` : ""}
+    ${pending && !pending.active ? `<div class="banner warn" role="alert">${neverBroadcast
+      ? "This attempt stopped before submission. Check now to release it and preserve the queue."
+      : "A distribution transaction has an unknown result. Automatic payouts are paused. Keep the queued accounting until this attempt has been checked."}</div>
+      <div class="row spread"><span class="muted">Pending ${pending.kind === "reburn" ? "reburn" : "payout"}</span><span class="mono">${fmtSat(pending.amountSat || "0", 8)} ${sym()}</span></div>
+      <div class="row"><button class="btn" id="di-copy-recovery" type="button">Copy recovery details</button>
+      ${pending.txId ? `<button class="link" id="di-pending-tx" type="button">View transaction</button>` : ""}</div>` : ""}
     <div class="row spread"><span class="muted">Engine</span>
       <span class="pill ${r.config.enabled ? "good" : "warn"}">${r.config.enabled ? "enabled" : "disabled"}</span></div>
     ${!r.config.enabled ? `<div class="muted small">Tracking paused. Mining while off will not be added to distribution.</div>` : d?.trackingPaused || !d?.anchored ? `<div class="muted small">Waiting for the first complete reward-history check to start tracking.</div>` : ""}
@@ -409,6 +440,9 @@ function patchDistributionView() {
       <span class="mono">${q ? fmtSat(q.reburnOwed, 4) : "0"} ${sym()}</span></div>
     <div class="row spread"><span class="muted">Payouts queued</span>
       <span class="mono">${q ? `${q.payouts.length} · ${fmtSat(q.payoutTotal, 4)} ${sym()}` : "0"}</span></div>`;
+
+  $("#di-copy-recovery")?.addEventListener("click", copyDistributionRecoveryDetails);
+  $("#di-pending-tx")?.addEventListener("click", () => openTx(pending.txId));
 
   const hist = $("#di-history");
   if (hist) {
