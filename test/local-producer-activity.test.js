@@ -18,7 +18,7 @@ function eventData(address, value) {
   out.push(Number(n)); return utils.encodeBase64url(Uint8Array.from(out));
 }
 function fixture(t, target = 400) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "master-local-rewards-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "master-local-rewards-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = { root, target, now: Date.now(), fork: 0, chainId: MAINNET_CHAIN_ID, own: new Set([390, 398, 400, 402]),
     calls: [], missing: null, badReceipt: null, broken: null, down: false, afterRead: () => {} };
@@ -54,7 +54,7 @@ function fixture(t, target = 400) {
 
 test("local finalized receipts update without an account-history service or public API", async t => {
   const f = fixture(t), result = await f.activity.refresh(ADDRESS);
-  assert.equal(result.available, true); assert.equal(result.stale, false); assert.equal(result.windowComplete, true);
+  assert.equal(result.available, true, result.error); assert.equal(result.stale, false, result.error); assert.equal(result.windowComplete, true);
   assert.equal(result.throughHeight, 400); assert.equal(result.totals.blocks, 3);
   assert.equal(result.totals.rewards, "1275000000"); assert.equal(result.totals.vhpConsumed, "1200000000");
   assert.equal(result.totals.profit, "75000000"); assert.deepEqual(result.feed.map(r => r.height), [400, 398, 390]);
