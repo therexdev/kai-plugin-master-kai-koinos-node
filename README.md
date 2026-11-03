@@ -17,6 +17,12 @@ The nine sections are **Dashboard**, **Wallet**, **Fund node**, **Burn KOIN → 
 
 Distribution and Node API start disabled. Enabling distribution requires the plugin wallet and an explicit action review. Automated payouts require the wallet to remain unlocked. Distribution and Reward returns cannot spend the same rewards at the same time.
 
+### Recent local rewards
+
+The Dashboard’s **Recent rewards · local chain** panel reads finalized blocks and receipts from this computer’s node directly. It works independently of the public Node API and account-history index. The panel labels the block range and starting time; these are bounded recent-window figures, not lifetime totals. New blocks are read first, then older blocks are loaded in small batches. A separate cache resumes after restart and is checked against the canonical chain before reuse.
+
+The activity feed replaces overlapping indexed block rows with locally verified rewards. Indexed lifetime totals remain separate, with a warning when they trail local production; incomplete profit projections are withheld. An unavailable local node is shown explicitly, and previously verified rows are marked stale. This dashboard cache never changes distribution or Reward returns balances, baselines or journals. Pausing distribution keeps its existing behavior.
+
 ### Distribution transaction recovery
 
 The percentage settings divide **profit after replacing consumed VHP**. A 100% profit allocation still reburns consumed VHP first. A cycle appearing in history means the amounts were queued, not that every transaction succeeded.

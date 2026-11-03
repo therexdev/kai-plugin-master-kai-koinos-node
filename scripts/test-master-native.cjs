@@ -170,6 +170,33 @@ async function main() {
       assert.equal(result.routed, true); assert.equal(result.focused, true); assert.equal(result.submitted, false);
       assert.equal(result.after.disabled, false); assert.equal(result.after.label, "Register signing key");
     });
+    await check("Local rewards remain visible while indexed history lags, with no duplicate after catch-up", async () => {
+      const result = await appEval(`(() => {
+        const saved = { dashboard: S.dashboard, localRewards: S.localRewards };
+        try {
+          const reward = { type: 'block', height: 40768447, time: Date.now(), reward: '424539351', vhpBurned: '408547686', profit: '15991665' };
+          S.dashboard = { ...S.dashboard, network: { ...S.dashboard.network, id: 'mainnet' }, wallet: { exists: true, address: 'synthetic-producer' },
+            stats: { available: true, totals: { blocks: 12, rewards: '5000000000', vhpConsumed: '4800000000', profit: '200000000', burned: '0', depositsIn: '0' },
+              feed: [{ ...reward, height: 40768000 }], windows: { last24h: '100000000', last7d: '200000000', last30d: '300000000' } } };
+          S.localRewards = { network: 'mainnet', address: 'synthetic-producer', available: true, stale: false, catchingUp: false,
+            checkedAt: Date.now(), fromHeight: 40768400, throughHeight: 40768500, fromTime: Date.now() - 300000, windowComplete: false,
+            totals: { blocks: 1, rewards: reward.reward, vhpConsumed: reward.vhpBurned, profit: reward.profit }, feed: [reward] };
+          const financialBefore = JSON.stringify(S.dashboard.stats.totals);
+          patchDashboardView();
+          const lag = { local: document.getElementById('d-local-rewards').innerText, history: document.getElementById('d-history-note').innerText,
+            feed: document.getElementById('d-feed').innerText, returns: Array.from(document.querySelectorAll('#d-returns .t-value'), e => e.textContent) };
+          S.dashboard.stats.feed = [reward]; patchDashboardView();
+          const caughtUp = document.querySelectorAll('#d-feed .feed-row').length;
+          S.localRewards.stale = true; patchDashboardView();
+          const stale = document.getElementById('d-local-status').innerText;
+          return { lag, caughtUp, stale, financialUnchanged: financialBefore === JSON.stringify(S.dashboard.stats.totals) };
+        } finally { Object.assign(S, saved); patchDashboardView(); }
+      })()`);
+      assert.match(result.lag.local, /Confirmed on this computer/); assert.match(result.lag.local, /4\.2453/);
+      assert.match(result.lag.history, /Indexed history is behind/); assert.match(result.lag.feed, /40,768,447/);
+      assert.ok(result.lag.returns.every(value => value === '—')); assert.equal(result.caughtUp, 1);
+      assert.match(result.stale, /unavailable or stale/); assert.equal(result.financialUnchanged, true);
+    });
     await check("No feature startup failures or uncaught renderer exceptions", async () => {
       report.runtime = await application.evaluate(() => ({ background: [...global.__foundationServices.backgroundErrors], errors: global.__foundationSmoke.errors, fixture: global.__masterNativeFixture }));
       assert.deepEqual(report.runtime.background, []); assert.deepEqual(report.runtime.errors, []);
