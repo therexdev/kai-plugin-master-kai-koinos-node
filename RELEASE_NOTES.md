@@ -1,3 +1,15 @@
+# Master KAI Koinos Node 0.1.6
+
+The dashboard reads recent production directly from this computer’s local node, even while the account-history index is rebuilding. A separate **Recent rewards · local chain** panel shows confirmed blocks, minted KOIN, consumed VHP and net profit for the explicitly labeled local window. The activity feed uses those verified receipts and removes overlapping history rows.
+
+The reader checks finality and block continuity, persists a bounded checkpoint, resumes after restart, and reports unavailable or stale data instead of showing a successful empty refresh. New blocks are read before older backfill. Missing old history does not discard already verified recent rewards. Mainnet chain identity, producer identity, receipt identity and token contracts are checked locally.
+
+Lifetime totals remain labeled as indexed history. When history trails locally verified rewards, the dashboard explains the delay and hides incomplete profit projections. Local display amounts never enter distribution or Reward returns journals, so history catching up cannot add these amounts twice or change a paused distribution. This release does not reconcile an earlier uncertain transaction or repair the public account-history index.
+
+Includes English, Spanish, Brazilian Portuguese, French and German labels. Requires KAI Core 0.7.17 or newer. Tests cover synthetic receipts, restart, finality, gaps, missing receipts, branch changes, cancellation, identity changes, cache preservation and feed overlap; no live transactions are submitted.
+
+## Previous releases
+
 # Master KAI Koinos Node 0.1.5
 
 Completes translation coverage for menus, forms, dialogs, tooltips and changing status text in English, Spanish, Brazilian Portuguese, French and German. Open views follow the language saved in Core Settings, including labels created after the view loads. Drafts, names, code and other user content remain intact.

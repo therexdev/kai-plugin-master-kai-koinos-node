@@ -202,6 +202,13 @@ async function refreshRewards() {
 // ---------- dashboard ----------
 
 async function refreshDashboard() {
+  // Local receipts refresh independently of the public history request.
+  if (!S.localRewardsPending) {
+    S.localRewardsPending = true;
+    call("dashboard:localRewards").then(data => { S.localRewards = data; })
+      .catch(e => { S.localRewards = { ...S.localRewards, stale: true, error: e.message }; })
+      .finally(() => { S.localRewardsPending = false; patchDashboardView(); });
+  }
   // Producer data loads separately so a slow explorer never delays wallet/node UI.
   if (!S.producerNetworkPending) {
     S.producerNetworkPending = true;
@@ -235,8 +242,15 @@ function renderDashboardView() {
       </div>
       <div id="d-sync"></div>
     </div>
+    <div class="card" id="d-local-rewards">
+      <div class="row spread"><h2>Recent rewards · local chain</h2><span class="muted small" id="d-local-status" aria-live="polite"></span></div>
+      <div class="widget-grid" id="d-local-tiles"></div>
+      <p class="muted small" id="d-local-note"></p>
+      <p class="small warn-text" id="d-local-error" hidden></p>
+    </div>
     <div class="card" id="d-node-details">
       <div class="row spread"><h2>Node Details</h2></div>
+      <p class="small muted" id="d-history-note" aria-live="polite"></p>
       <div class="widget-grid" id="d-tiles"></div>
     </div>
     <div class="card">
@@ -273,6 +287,24 @@ function patchDashboardView() {
     return;
   }
   const symbol = d.network.tokenSymbol;
+  const activity = KaiDashboardActivity.compose(d, S.localRewards);
+  const local = activity.local;
+  const localTotals = local?.available ? local.totals : null;
+  $("#d-local-tiles").innerHTML = tile("Confirmed blocks", localTotals ? localTotals.blocks.toLocaleString() : "—", "local window")
+    + tile("Rewards", localTotals ? fmtSat(localTotals.rewards, 4) : "—", KaiI18n.message`${symbol} minted`, "good")
+    + tile("VHP consumed", localTotals ? fmtSat(localTotals.vhpConsumed, 4) : "—", "local window")
+    + tile("Net profit", localTotals ? fmtSat(localTotals.profit, 4) : "—", "rewards − VHP spent", "good");
+  KaiI18n.setText($("#d-local-status"), !d.wallet.exists ? "Choose a producer wallet" : !local ? "Reading local chain…"
+    : local.stale || !local.available ? "Local data unavailable or stale" : local.catchingUp ? "Catching up with confirmed blocks…" : "Confirmed on this computer");
+  KaiI18n.setText($("#d-local-note"), local?.available
+    ? KaiI18n.message`Blocks ${local.fromHeight.toLocaleString()}–${local.throughHeight.toLocaleString()} · since ${new Date(local.fromTime).toLocaleString()} · ${local.windowComplete ? "recent window complete" : "reading older blocks…"}`
+    : "Recent rewards are read from this computer’s node, independently of account history.");
+  $("#d-local-error").hidden = !local?.error;
+  KaiI18n.setText($("#d-local-error"), local?.error || "");
+  KaiI18n.setText($("#d-history-note"), activity.historyBehind
+    ? "Indexed history is behind local rewards. Lifetime totals and projections are still catching up."
+    : activity.historyUnavailable ? "Indexed history is unavailable. Local rewards can still update."
+    : "Lifetime totals below use indexed account history. Local window rewards are shown separately.");
   const running = !!(d.node && d.node.isRunning);
   const quickSync = d.node?.op?.running && d.node.op.name === "quick-sync";
   const starting = !d.node?.health?.needsRepair && !d.node?.production?.reason && (d.node?.health?.recovering || ["starting", "rpc-unavailable"].includes(d.node?.health?.reason));
@@ -366,8 +398,8 @@ function patchDashboardView() {
   $("#d-tiles").innerHTML = tiles.join("");
 
   // profit windows + projected return
-  const w = st && st.windows ? st.windows : null;
-  const ret = d.returns || null;
+  const w = !activity.historyUncertain && st && st.windows ? st.windows : null;
+  const ret = !activity.historyUncertain ? d.returns || null : null;
   const yearlyCurrent = ret
     ? ret.yearlyReturnPct != null
       ? fmtPct(ret.yearlyReturnPct)
@@ -391,7 +423,7 @@ function patchDashboardView() {
     tile("Yearly + reburn", yearlyReburn, yearlyReburnSub, "accent"),
   ];
   $("#d-returns").innerHTML = returnTiles.join("");
-  KaiI18n.setText($("#d-returns-note"), (!w ? "" : (st.syncing ? "history syncing — longer windows still catching up" : (w.daysTracked > 0 && w.daysTracked < 30 ? KaiI18n.message`based on ${w.daysTracked} day${w.daysTracked === 1 ? "" : "s"} of history` : ""))));
+  KaiI18n.setText($("#d-returns-note"), activity.historyUncertain ? "Waiting for indexed reward history" : (!w ? "" : (w.daysTracked > 0 && w.daysTracked < 30 ? KaiI18n.message`based on ${w.daysTracked} day${w.daysTracked === 1 ? "" : "s"} of history` : "")));
 
   // feed
   const feedEl = $("#d-feed");
@@ -399,17 +431,20 @@ function patchDashboardView() {
   if (!d.wallet.exists) {
     feedEl.innerHTML = KaiI18n.html`<span class="muted small">Create a wallet (Wallet tab) to see activity.</span>`;
     note.textContent = "";
-  } else if (!st) {
+  } else if (!st && !local?.available) {
     feedEl.innerHTML = KaiI18n.html`<span class="muted small">Activity history isn't available on ${esc(d.network.label)} — it needs a history RPC (works on mainnet).</span>`;
     note.textContent = "";
-  } else if (!st.feed.length) {
-    feedEl.innerHTML = KaiI18n.html`<span class="muted small">No activity yet. When your node produces a block, it appears here.</span>`;
-    KaiI18n.setText(note, st.syncing ? "syncing…" : "");
+  } else if (!activity.feed.length) {
+    feedEl.innerHTML = KaiI18n.html`<span class="muted small">No rewards found in the blocks checked so far.</span>`;
+    KaiI18n.setText(note, local?.available ? "Local confirmed blocks · older history may still be loading" : "syncing…");
   } else {
-    KaiI18n.setText(note, st.syncing ? "totals still syncing…" : "");
-    feedEl.innerHTML = st.feed.map((f) => feedRow(symbol, f)).join("");
+    KaiI18n.setText(note, local?.available
+      ? local.stale ? "Last verified local rewards · refresh unavailable" : "Local confirmed blocks · older history may still be loading"
+      : st?.syncing ? "totals still syncing…" : "Indexed account history");
+    feedEl.innerHTML = activity.feed.map((f) => feedRow(symbol, f)).join("");
   }
-  KaiI18n.setText($("#d-updated"), (st && st.updatedAt ? KaiI18n.message`updated ${new Date(st.updatedAt).toLocaleTimeString()}` : ""));
+  KaiI18n.setText($("#d-updated"), local?.checkedAt ? KaiI18n.message`Local chain checked ${new Date(local.checkedAt).toLocaleTimeString()}`
+    : st && st.updatedAt ? KaiI18n.message`updated ${new Date(st.updatedAt).toLocaleTimeString()}` : "");
 }
 
 function feedRow(symbol, f) {

@@ -17,6 +17,7 @@ const { checkHistory } = require("./koinos/history-check");
 const { RewardEngine } = require("./koinos/rewards");
 const { createProducerCache } = require("./koinos/network-producers");
 const { ProducerStats } = require("./koinos/producer-stats");
+const { LocalProducerActivity } = require("./koinos/local-producer-activity");
 const { projectReturns } = require("./koinos/profit-metrics");
 const { valuation, createPriceCache, satsToUsd } = require("./koinos/koin-price");
 const { parseAmount, formatAmount, subSats, cmpSats } = require("./koinos/format");
@@ -41,7 +42,7 @@ const { compareRoutes, descriptor } = require("./koinos/fund-routes");
 const DEFAULT_ONRAMP_ENDPOINT = "https://koinos-node.vercel.app/api/session";
 const ONRAMP_APP_KEY = "kkapp_71854dc40591df1aeb8811a514e3dbc302bb382f";
 
-function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, masterApi, stats, bridge, routeC, userData, appVersion, defaultNodeData = null, priceCache: injectedPriceCache = null, producerCache: injectedProducerCache = null, vaultRequest = undefined, onEvent = () => {} }) {
+function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, masterApi, stats, localActivity, bridge, routeC, userData, appVersion, defaultNodeData = null, priceCache: injectedPriceCache = null, producerCache: injectedProducerCache = null, vaultRequest = undefined, onEvent = () => {} }) {
   const channels = new Map();
   const handle = (channel, fn) => channels.set(channel, fn);
   const { ProducerCustody } = require("./koinos/producer-custody");
@@ -475,6 +476,10 @@ function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards
 
   // ----- dashboard -----
   let lastGoodBalances = null; // { values, at, address }
+
+  handle("dashboard:localRewards", () => localActivity
+    ? localActivity.refresh(producerAddress())
+    : { available: false, network: chain.network().id, address: producerAddress() });
 
   handle("dashboard:summary", async () => {
     const net = chain.network();
@@ -1015,6 +1020,7 @@ function createKoinosNode({ dataDir, wallet, appVersion, onEvent = () => {}, sto
   nodeMgr.startDocker = () => setup.startDocker({ installIfMissing: false });
 
   const stats = new ProducerStats({ chain, state });
+  const localActivity = new LocalProducerActivity({ chain, root, storeFactory });
   const rewards = new RewardEngine({ chain, wallet, settings, state, stats, onEvent });
   const distribution = new DistributionEngine({ chain, wallet, settings, state, stats, onEvent,
     authorize: () => {
@@ -1076,7 +1082,7 @@ function createKoinosNode({ dataDir, wallet, appVersion, onEvent = () => {}, sto
   const priceCache = createPriceCache();
   const producerCache = createProducerCache();
   const channels = buildChannels({
-    settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, masterApi, stats, bridge, routeC,
+    settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, masterApi, stats, localActivity, bridge, routeC,
     userData: root, appVersion, defaultNodeData, priceCache, producerCache, onEvent,
   });
 
