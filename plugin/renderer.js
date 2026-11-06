@@ -3085,6 +3085,7 @@ function switchView(view) {
   if (view === "dashboard") refreshDashboard();
   if (view === "node") refreshNode();
   if (view === "distribution") refreshDistribution();
+  if (view === "airdrops") refreshAirdrops();
   if (view === "master-api") refreshMasterApi();
   if (view === "returns") refreshRewards();
   if (view === "fund") refreshFund();
@@ -3098,6 +3099,7 @@ async function heartbeat() {
     if (S.view === "wallet" || S.view === "burn") await refreshBalances();
     if (S.view === "node") await refreshNode();
     if (S.view === "distribution") await refreshDistribution();
+    if (S.view === "airdrops") await refreshAirdrops();
     if (S.view === "master-api") await refreshMasterApi();
     if (S.view === "returns") await refreshRewards();
     if (S.view === "fund") await refreshFund();
@@ -3117,6 +3119,7 @@ async function init() {
     }
     if (evt.type === "node" && S.view === "node") refreshNode();
     if (evt.type === "rewards") { refreshRewards(); S.balancesAt = 0; }
+    if (evt.type === "airdrop" && S.view === "airdrops") refreshAirdrops();
     if (evt.type === "distribution" && S.view === "distribution") refreshDistribution();
     if ((evt.type === "bridge" || evt.type === "routeC") && S.view === "fund") refreshFundJobs();
     if (S.view === "dashboard") refreshDashboard();
@@ -3126,6 +3129,7 @@ async function init() {
   renderDashboardView();
   renderNodeView();
   renderDistributionView();
+  renderAirdropsView();
   renderMasterApiView();
   renderReturnsView();
   renderFundView();

@@ -5,14 +5,14 @@
 const fs = require("node:fs"), path = require("node:path");
 const { deepMerge } = require("../../core/lib/store");
 const { NETWORKS } = require("../../core/lib/koinos/constants");
-const READ = new Set(["app:info","wallet:status","wallet:summary","wallet:history","producer:balances","chain:balances","chain:sync","chain:maxBurn","producer:status","producer:draft","producer:vaultStatus","node:status","node:profileMigrationPreview","node:profileMigrationStatus","setup:status","node:logs","node:dataDir","node:inspectDataDir","node:moveDataDirStatus","node:backups","node:quickSyncInfo","network:producers","dashboard:summary","dashboard:localRewards","rewards:status","distribution:status","masterApi:status","masterApi:checkHistory","fund:status","fund:ethBalance","fund:bridgeStatus","fund:routeCStatus","fund:bridgeMax","fund:bridgeQuote","fund:routeCompare","fund:ethSendQuote","fund:ethSendMax","fund:cryptoBalances","fund:usdtSendQuote","fund:usdtSendMax","fund:usdtFundQuote","fund:vkoinSendQuote","fund:vkoinSendMax","fund:routeMaxEth","util:copy"]);
-const WALLET = new Set(["wallet:create","wallet:import","wallet:unlock","wallet:lock","wallet:revealWif","wallet:remove","chain:burn","chain:send","producer:register","producer:configure","producer:key","producer:prepare","producer:broadcast","producer:vaultConnect","producer:vaultUse","producer:vaultPrepare","producer:vaultSend","producer:vaultDisconnect","rewards:configure","rewards:runNow","distribution:configure","distribution:runNow","distribution:distributeNow","distribution:resetStats"]);
+const READ = new Set(["airdrop:preview","airdrop:status","airdrop:csv","app:info","wallet:status","wallet:summary","wallet:history","producer:balances","chain:balances","chain:sync","chain:maxBurn","producer:status","producer:draft","producer:vaultStatus","node:status","node:profileMigrationPreview","node:profileMigrationStatus","setup:status","node:logs","node:dataDir","node:inspectDataDir","node:moveDataDirStatus","node:backups","node:quickSyncInfo","network:producers","dashboard:summary","dashboard:localRewards","rewards:status","distribution:status","masterApi:status","masterApi:checkHistory","fund:status","fund:ethBalance","fund:bridgeStatus","fund:routeCStatus","fund:bridgeMax","fund:bridgeQuote","fund:routeCompare","fund:ethSendQuote","fund:ethSendMax","fund:cryptoBalances","fund:usdtSendQuote","fund:usdtSendMax","fund:usdtFundQuote","fund:vkoinSendQuote","fund:vkoinSendMax","fund:routeMaxEth","util:copy"]);
+const WALLET = new Set(["airdrop:discard","airdrop:create","airdrop:run","airdrop:reconcile","wallet:create","wallet:import","wallet:unlock","wallet:lock","wallet:revealWif","wallet:remove","chain:burn","chain:send","producer:register","producer:configure","producer:key","producer:prepare","producer:broadcast","producer:vaultConnect","producer:vaultUse","producer:vaultPrepare","producer:vaultSend","producer:vaultDisconnect","rewards:configure","rewards:runNow","distribution:configure","distribution:runNow","distribution:distributeNow","distribution:resetStats"]);
 const FUND = new Set(["fund:buyUrl","fund:bridgeReset","fund:bridgeAdvance","fund:bridgeStart","fund:routeCReset","fund:routeCAdvance","fund:routeCResume","fund:routeCStart","fund:ethSend","fund:usdtSend","fund:vkoinSend"]);
-const MANAGE = new Set(["masterApi:configure","settings:update","setup:installWsl","setup:restart","setup:cancelRestart","setup:installDocker","setup:cancelInstallDocker","setup:startDocker","setup:markWslReady","setup:openDockerDocs","util:openExternal","util:openPath","node:start","node:stop","node:profileMigrationStart","node:profileMigrationCancel","node:repairServices","node:setAutoRecover","node:setDataDir","node:moveDataDir","node:moveDataDirCancel","node:deleteBackup","node:quickSync","node:quickSyncCancel"]);
+const MANAGE = new Set(["airdrop:pause","masterApi:configure","settings:update","setup:installWsl","setup:restart","setup:cancelRestart","setup:installDocker","setup:cancelInstallDocker","setup:startDocker","setup:markWslReady","setup:openDockerDocs","util:openExternal","util:openPath","node:start","node:stop","node:profileMigrationStart","node:profileMigrationCancel","node:repairServices","node:setAutoRecover","node:setDataDir","node:moveDataDir","node:moveDataDirCancel","node:deleteBackup","node:quickSync","node:quickSyncCancel"]);
 const LOCAL = new Set(["app:info","wallet:status","wallet:create","wallet:import","wallet:unlock","wallet:lock","wallet:revealWif","wallet:remove","producer:draft","fund:status","fund:bridgeStatus","fund:routeCStatus","node:stop","node:logs","node:dataDir","node:inspectDataDir","node:moveDataDirStatus","node:moveDataDirCancel","node:backups","node:deleteBackup","node:quickSyncCancel","setup:status","setup:cancelRestart","setup:cancelInstallDocker","util:copy","util:openPath"]);
-const MONEY = new Set([...FUND].filter(name => !["fund:buyUrl","fund:bridgeReset","fund:routeCReset"].includes(name)).concat(["chain:burn","chain:send","producer:register","producer:broadcast","producer:vaultSend","rewards:runNow","rewards:configure","distribution:configure","distribution:runNow","distribution:distributeNow","distribution:resetStats","wallet:create","wallet:import","wallet:remove"]));
-const REVIEW = new Set([...MANAGE, ...WALLET, ...FUND].filter(name => !["wallet:unlock","wallet:lock","producer:vaultStatus","producer:vaultDisconnect","setup:cancelRestart","setup:cancelInstallDocker","node:quickSyncCancel","node:moveDataDirCancel","node:profileMigrationCancel"].includes(name)));
-const permissions = Object.freeze({"node.read":"koinos-node.read","node.events":"koinos-node.read","node.language":"koinos-node.read","node.manage":"koinos-node.manage","node.pickFolder":"koinos-node.manage","node.wallet":"koinos-node.wallet","node.fund":"koinos-node.fund","node.exportDraft":"koinos-node.wallet"});
+const MONEY = new Set([...FUND].filter(name => !["fund:buyUrl","fund:bridgeReset","fund:routeCReset"].includes(name)).concat(["airdrop:run","chain:burn","chain:send","producer:register","producer:broadcast","producer:vaultSend","rewards:runNow","rewards:configure","distribution:configure","distribution:runNow","distribution:distributeNow","distribution:resetStats","wallet:create","wallet:import","wallet:remove"]));
+const REVIEW = new Set([...MANAGE, ...WALLET, ...FUND].filter(name => !["airdrop:pause","wallet:unlock","wallet:lock","producer:vaultStatus","producer:vaultDisconnect","setup:cancelRestart","setup:cancelInstallDocker","node:quickSyncCancel","node:moveDataDirCancel","node:profileMigrationCancel"].includes(name)));
+const permissions = Object.freeze({"node.read":"koinos-node.read","node.events":"koinos-node.read","node.language":"koinos-node.read","node.manage":"koinos-node.manage","node.pickFolder":"koinos-node.manage","node.wallet":"koinos-node.wallet","node.fund":"koinos-node.fund","node.exportDraft":"koinos-node.wallet","node.exportAirdrop":"koinos-node.read"});
 const groups = {"node.read":READ,"node.manage":MANAGE,"node.wallet":WALLET,"node.fund":FUND};
 const plain = value => value && typeof value === "object" && !Array.isArray(value);
 function safePath(target, file = false, maxBytes = 8*1024*1024) {
@@ -37,7 +37,8 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
     // The bounded, rebuildable public index is larger than settings and changes
     // every few seconds. It must not create unbounded backups or gate the wallet.
     const publicIndex=["master-producer-index.json","master-dashboard-rewards.json"].some(name=>file===path.join(root,name));
-    const options=publicIndex?{maxBytes:16*1024*1024,backup:false}:undefined;
+    const airdropJournal=file===path.join(root,"airdrops.json");
+    const options=airdropJournal?{maxBytes:32*1024*1024,backup:false}:publicIndex?{maxBytes:16*1024*1024,backup:false}:undefined;
     safePath(file,true,options?.maxBytes);const store=new GuardedStore(file,options);store.data=deepMerge(structuredClone(defaults),store.data);
     store.all=()=>{store.assert();return structuredClone(store.data);};store.health=()=>{store.assert();return{ok:true,error:null,recoveredFromBackup:false,backupError:null};};
     store.reopen=()=>{store.assert();const fresh=new GuardedStore(file,options);fresh.health=()=>{fresh.assert();return{ok:true};};return fresh;};
@@ -128,6 +129,14 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
     assertActive(signal);if(!plain(input))throw Error("Invalid Node request");
     if(method==="node.language"){if(Object.keys(input).length)throw Error("Change the shared language in Core Settings");return ctx.locale.get();}
     if(method==="node.events"){const after=input.after??0;if(!Number.isSafeInteger(after)||after<0)throw Error("Invalid event cursor");return{cursor:serial,events:events.filter(e=>e.id>after)};}
+    if(method==="node.exportAirdrop") {
+      if(Object.keys(input).some(key=>key!=="id")||typeof input.id!=="string")throw Error("Choose a saved airdrop report.");
+      const csv=await getEngine().call("airdrop:csv",{id:input.id});assertActive(signal);
+      const result=await ctx.electron.dialog.showSaveDialog(ctx.getWindow(),{title:"Save airdrop payment record",defaultPath:"kai-airdrop-"+input.id.replace(/[^a-zA-Z0-9-]/g,"")+".csv",filters:[{name:"CSV payment record",extensions:["csv"]}]});assertActive(signal);
+      if(result.canceled)return{cancelled:true};
+      if(typeof result.filePath!=="string"||!result.filePath.toLowerCase().endsWith(".csv"))throw Error("Choose a CSV filename.");
+      safePath(result.filePath,true);fs.writeFileSync(result.filePath,csv,{mode:0o600,flag:"w"});return{saved:true};
+    }
     if(method==="node.exportDraft") {
       if(Object.keys(input).length)throw Error("Draft export takes no caller file path or contents");
       const draft=await getEngine().call("producer:draft",{});assertActive(signal);
@@ -140,7 +149,7 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
     if(!groups[method]||!groups[method].has(input.channel)||Object.keys(input).some(k=>!["channel","payload"].includes(k)))throw Error("Unknown Node channel or channel outside this permission");
     const channel=input.channel,payload=input.payload??{};if(!plain(payload)||Buffer.byteLength(JSON.stringify(payload))>200000)throw Error("Invalid Node payload");
     const captured=structuredClone(payload), reviewedIdentity=identity();
-    const isMutation=method!=="node.read";
+    const isMutation=method!=="node.read"&&channel!=="airdrop:pause";
     if(isMutation&&mutation)throw Error("Wait for the current Node operation to finish");
     if(isMutation)mutation=true;
     try {
@@ -152,7 +161,7 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
         assertActive(signal);assertIdentity(reviewedIdentity);
       }
       if ((engine?.nodeMgr?._profileMigrationActive || engine?.nodeMgr?._profileMigration?.status(reviewedIdentity.network)?.resumable) && isMutation && !["node:profileMigrationCancel", "node:profileMigrationStart"].includes(channel)) throw Error("Pause or finish the chain migration before changing Node settings or wallet controls.");
-      const hasStoredReview=["producer:vaultSend","producer:broadcast","rewards:runNow","distribution:runNow","distribution:distributeNow","distribution:resetStats"].includes(channel);
+      const hasStoredReview=["airdrop:discard","airdrop:run","airdrop:reconcile","producer:vaultSend","producer:broadcast","rewards:runNow","distribution:runNow","distribution:distributeNow","distribution:resetStats"].includes(channel);
       const storedReview=hasStoredReview?getEngine().review(channel):null;
       if(channel==="producer:vaultSend"&&captured.draftId!==storedReview.draftId)throw Error("The Koin Vault draft changed. Prepare and review it again.");
       const assertReview=()=>{if(hasStoredReview&&JSON.stringify(getEngine().review(channel))!==JSON.stringify(storedReview))throw Error("The reviewed Node draft or return settings changed. Review this action again.");};
@@ -191,6 +200,7 @@ function create(ctx, { createEngine = require("../../core/lib/koinos-node").crea
   }
   function cancelNative() {
     services?.rewards.stop();services?.distribution?.stop();services?.setup.cancelInstallDocker?.();services?.setup.stopWatchers?.();
+    services?.airdrops?.pause();
     engine?.nodeMgr._profileMigration?.cancel();
     engine?.nodeMgr.cancelQuickSync?.();engine?.nodeMgr.cancelMove?.();engine?.nodeMgr._stopWatchdog?.();
   }

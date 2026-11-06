@@ -63,9 +63,9 @@ test("polling cannot replace a fresh resume review with an older journal preview
   const f = fixture({ job: { phase: "cancelled", resumable: true, preview: review({ previewId: "old", resumable: true }) }, preview: review({ previewId: "new", resumable: true }) });
   await f.controller.open(); await f.controller.poll(); assert.equal(f.controller.snapshot().preview.previewId, "new"); f.controller.dispose();
 });
-test("renderer assets retain all nine Master Node menus, safe text rendering and pause/recovery controls", () => {
+test("renderer assets retain all ten Master Node menus, safe text rendering and pause/recovery controls", () => {
   const rootDir = path.join(__dirname, "../plugin"), html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8"), script = fs.readFileSync(path.join(rootDir, "node-migration.js"), "utf8"), bridge = fs.readFileSync(path.join(rootDir, "bridge.js"), "utf8");
-  assert.deepEqual([...html.matchAll(/data-view="([^"]+)"/g)].map(m => m[1]), ["dashboard", "wallet", "fund", "burn", "node", "distribution", "master-api", "returns", "settings"]);
+  assert.deepEqual([...html.matchAll(/data-view="([^"]+)"/g)].map(m => m[1]), ["dashboard", "wallet", "fund", "burn", "node", "distribution", "airdrops", "master-api", "returns", "settings"]);
   new vm.Script(script); assert.match(html, /<dialog id="node-migration-dialog"/); assert.match(html, /I have closed Master Koinos AI Node, including its tray icon/); assert.match(html, /Master Node chain data/); assert.match(script, /Migrate from Master Koinos AI Node/); assert.match(script, /KOIN and VHP manually/); assert.match(script, /Pause migration/); assert.match(script, /Resume migration/);
   assert.ok(!/innerHTML|fetch\(|window\.open\(/.test(script)); assert.match(bridge, /"node:profileMigrationPreview","node:profileMigrationStatus"/);
   assert.equal(bytes(1024), "1 KB"); assert.equal(bytes(-1), "Unknown size");

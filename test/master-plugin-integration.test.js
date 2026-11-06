@@ -9,7 +9,7 @@ function fixture() {
   const address = Signer.fromSeed("master plugin isolated public fixture only").address;
   let services, approved = true, held = false, signatures = 0;
   const reviews = [], wallet = { address, status: () => ({ exists: true, address: wallet.address, unlocked: true }),
-    get signer() { return { signHash: async () => { signatures++; return "fixture signature"; } }; },
+    get signer() { return { getAddress: () => wallet.address, signHash: async () => { signatures++; return "fixture signature"; } }; },
     signerFor(password) { if (password !== "fixture proof") throw Error("Incorrect password"); return this.signer; } };
   let spendTail = Promise.resolve();
   const service = full.create({ dataDir: dir, wallet, settings: { get: () => null }, electron: {},
@@ -145,5 +145,56 @@ test("an unreadable producer checkpoint is preserved and does not stop the API o
     assert.equal(fs.readFileSync(file, "utf8"), original);
     await f.service.call("node.read", { channel: "app:info" });
     assert.equal((await fetch(`http://127.0.0.1:${port}/v1/status`)).status, 200);
+  } finally { await f.close(); }
+});
+
+async function prepareAirdrop(f, token = "koin") {
+  const input = { token, mode: "amounts", text: Signer.fromSeed("airdrop native recipient").address + ",2" };
+  const preview = await f.service.call("node.read", { channel: "airdrop:preview", payload: input });
+  return f.service.call("node.wallet", { channel: "airdrop:create", payload: { ...input, fingerprint: preview.fingerprint } });
+}
+test("airdrop native review and password proof gate all transfers and hide secrets", async () => {
+  const f = fixture(); try {
+    const prepared = await prepareAirdrop(f), id = prepared.job.id; let sent = 0;
+    f.services.chain.balances = async () => ({ koin: "500000000", vhp: "500000000" });
+    f.services.chain.submitAirdrop = async (signer, row, record) => {
+      assert.equal(f.held, true); await signer.signHash("synthetic"); await record({ txId: "airdrop-test", chainId: "chain", nonce: "nonce" }); sent++;
+      return { txId: "airdrop-test", confirmed: true, blockNumber: 20 };
+    };
+    f.setApproved(false);
+    await assert.rejects(f.service.call("node.wallet", { channel: "airdrop:run", payload: { id, password: "fixture proof" } }), /Cancelled/);
+    assert.equal(sent, 0); f.setApproved(true);
+    await assert.rejects(f.service.call("node.wallet", { channel: "airdrop:run", payload: { id, password: "bad" } }), /password/);
+    assert.equal(sent, 0);
+    await f.service.call("node.wallet", { channel: "airdrop:run", payload: { id, password: "fixture proof" } });
+    assert.equal(sent, 1); assert.equal(f.signatures, 1);
+    const review = f.reviews.at(-1).detail; assert.match(review, /remainingAmount/); assert.match(review, /recipientListFingerprint/); assert.doesNotMatch(review, /fixture proof/);
+    assert.equal((await f.service.call("node.read", { channel: "airdrop:status" })).job.rows[0].status, "sent");
+  } finally { await f.close(); }
+});
+test("airdrop pause remains available while spending; wallet mutation is blocked", async () => {
+  const f = fixture(); try {
+    const prepared = await prepareAirdrop(f, "vhp"), id = prepared.job.id;
+    f.services.chain.balances = async () => ({ koin: "500000000", vhp: "500000000" });
+    let release, entered;
+    const reached = new Promise(resolve => { entered = resolve; });
+    f.services.chain.submitAirdrop = async (signer, row, record) => {
+      assert.equal(row.token, "vhp"); await record({ txId: "paused", chainId: "chain", nonce: "nonce" });
+      entered(); await new Promise(resolve => { release = resolve; }); return { txId: "paused", confirmed: true, blockNumber: 20 };
+    };
+    const run = f.service.call("node.wallet", { channel: "airdrop:run", payload: { id, password: "fixture proof" } });
+    await reached;
+    await assert.rejects(f.service.call("node.wallet", { channel: "wallet:lock" }), /Wait/);
+    await f.service.call("node.manage", { channel: "airdrop:pause" });
+    assert.equal((await f.service.call("node.read", { channel: "airdrop:status" })).pauseRequested, true);
+    release(); await run;
+  } finally { await f.close(); }
+});
+test("airdrop refuses to compete with enabled reward distribution", async () => {
+  const f = fixture(); try {
+    const { job } = await prepareAirdrop(f);
+    f.services.settings.set("distribution.enabled", true);
+    await assert.rejects(f.service.call("node.wallet", { channel: "airdrop:run", payload: { id: job.id, password: "fixture proof" } }), /Pause distribution/);
+    assert.equal(f.signatures, 0);
   } finally { await f.close(); }
 });
