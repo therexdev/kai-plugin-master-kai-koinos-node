@@ -1,11 +1,11 @@
-## 0.1.7 — Airdrops (source candidate)
+## 0.1.7 — Airdrops
 
 - Add the Airdrops tab: KOIN or VHP, equal total splits and CSV/tab-separated per-wallet amounts.
 - Preview exact allocations, validate address checksums/duplicates and conserve all eight decimal places.
 - Save campaign progress in a guarded native journal; pause/resume with password proof and native review, serialized with other wallet spending.
 - Record transaction identity before broadcast and stop on uncertainty. Reconcile only against canonical irreversible receipts; never infer a safe resend from a missing RPC result.
 - Export complete CSV payment records and retain completed campaigns. Add English/Spanish/Portuguese/French/German interface labels.
-- Requires publisher signing and release verification before marketplace installation. No new smart contract is required.
+- Signed with the established publisher identity and verified against the exact source. Requires Core 0.7.17 or newer. No new smart contract is required; release tests send no live funds.
 
 # Master KAI Koinos Node 0.1.6
 

@@ -72,7 +72,7 @@ This plugin follows the language saved in KAI Core Settings and applies changes 
 [Interface language and translation guide](docs/localization.md).
 
 
-## Airdrops (0.1.7 candidate)
+## Airdrops (0.1.7)
 
 1. Open **Airdrops** and choose **KOIN** or **VHP**. Funds come from this plugin's Node wallet on the selected network, not the Core wallet or an external producer wallet.
 2. Choose **Split a total equally** and enter the total plus a list of addresses; or choose **Amount for each wallet** and paste `ADDRESS,AMOUNT` rows or two tab-separated spreadsheet columns. `ADDRESS,TOKEN-AMOUNT` is an optional header. Amounts use a decimal point, up to eight decimal places, and no thousands separators. Limit: 2,000 unique recipients per campaign.
@@ -83,4 +83,4 @@ This plugin follows the language saved in KAI Core Settings and applies changes 
 
 The native journal records each transaction identity before broadcast. A timeout or lost response stops the campaign; an uncertain payment is never automatically resent. **Check uncertain transaction** requires an exact transaction on the original chain with a canonical irreversible receipt. A verified successful payment is marked sent; a verified reverted payment can be retried after a fresh start/resume approval. Missing or unindexed transactions remain blocked. If the RPC does not expose transaction/block history, restore an endpoint with that history before checking again; do not delete the journal to bypass recovery. `sent` means observed included (or reconciled irreversible), not that every normal payment has already reached finality.
 
-The source candidate has automated synthetic transaction/native-boundary tests. No live funds were sent. Publisher signing and the release CI workflow are still required for an installable update; the old immutable package signature cannot sign changed source.
+This release uses the established publisher signature and automated synthetic transaction/native-boundary tests. No live funds were sent. Install the verified 0.1.7 package after the release workflow completes.
