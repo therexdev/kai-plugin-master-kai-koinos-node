@@ -6,6 +6,7 @@
 
   // ---- password gate: value leaving the wallet proves the password HERE ----
   var OUTBOUND = {
+    "airdrop:run": "Send airdrop",
     "chain:send": "Send KOIN",
     "fund:bridgeStart": "Bridge ETH to KOIN",
     "fund:routeCStart": "Fund with a swap",
@@ -78,8 +79,8 @@
     });
   }
 
-  const READ_CHANNELS = new Set(["app:info","wallet:status","wallet:summary","wallet:history","producer:balances","chain:balances","chain:sync","chain:maxBurn","producer:status","producer:draft","producer:vaultStatus","node:status","node:profileMigrationPreview","node:profileMigrationStatus","setup:status","node:logs","node:dataDir","node:inspectDataDir","node:moveDataDirStatus","node:backups","node:quickSyncInfo","network:producers","dashboard:summary","dashboard:localRewards","distribution:status","masterApi:status","masterApi:checkHistory","rewards:status","fund:status","fund:ethBalance","fund:bridgeStatus","fund:routeCStatus","fund:bridgeMax","fund:bridgeQuote","fund:routeCompare","fund:ethSendQuote","fund:ethSendMax","fund:cryptoBalances","fund:usdtSendQuote","fund:usdtSendMax","fund:usdtFundQuote","fund:vkoinSendQuote","fund:vkoinSendMax","fund:routeMaxEth","util:copy"]);
-  const WALLET_CHANNELS = new Set(["wallet:create","wallet:import","wallet:unlock","wallet:lock","wallet:revealWif","wallet:remove","chain:burn","chain:send","producer:register","producer:configure","producer:key","producer:prepare","producer:broadcast","producer:vaultConnect","producer:vaultUse","producer:vaultPrepare","producer:vaultSend","producer:vaultDisconnect","rewards:configure","rewards:runNow","distribution:configure","distribution:runNow","distribution:distributeNow","distribution:resetStats"]);
+  const READ_CHANNELS = new Set(["airdrop:preview","airdrop:status","airdrop:csv","app:info","wallet:status","wallet:summary","wallet:history","producer:balances","chain:balances","chain:sync","chain:maxBurn","producer:status","producer:draft","producer:vaultStatus","node:status","node:profileMigrationPreview","node:profileMigrationStatus","setup:status","node:logs","node:dataDir","node:inspectDataDir","node:moveDataDirStatus","node:backups","node:quickSyncInfo","network:producers","dashboard:summary","dashboard:localRewards","distribution:status","masterApi:status","masterApi:checkHistory","rewards:status","fund:status","fund:ethBalance","fund:bridgeStatus","fund:routeCStatus","fund:bridgeMax","fund:bridgeQuote","fund:routeCompare","fund:ethSendQuote","fund:ethSendMax","fund:cryptoBalances","fund:usdtSendQuote","fund:usdtSendMax","fund:usdtFundQuote","fund:vkoinSendQuote","fund:vkoinSendMax","fund:routeMaxEth","util:copy"]);
+  const WALLET_CHANNELS = new Set(["airdrop:discard","airdrop:create","airdrop:run","airdrop:reconcile","wallet:create","wallet:import","wallet:unlock","wallet:lock","wallet:revealWif","wallet:remove","chain:burn","chain:send","producer:register","producer:configure","producer:key","producer:prepare","producer:broadcast","producer:vaultConnect","producer:vaultUse","producer:vaultPrepare","producer:vaultSend","producer:vaultDisconnect","rewards:configure","rewards:runNow","distribution:configure","distribution:runNow","distribution:distributeNow","distribution:resetStats"]);
   const FUND_CHANNELS = new Set(["fund:buyUrl","fund:bridgeReset","fund:bridgeAdvance","fund:bridgeStart","fund:routeCReset","fund:routeCAdvance","fund:routeCResume","fund:routeCStart","fund:ethSend","fund:usdtSend","fund:vkoinSend"]);
   function rpc(channel, payload) {
     const method = READ_CHANNELS.has(channel) ? "node.read" : WALLET_CHANNELS.has(channel) ? "node.wallet" : FUND_CHANNELS.has(channel) ? "node.fund" : "node.manage";
@@ -741,7 +742,7 @@
   // only after init() attaches listeners, so keep trying until the view is
   // actually active.
   var wanted = null;
-  var sections = new Set(["dashboard", "wallet", "fund", "burn", "node", "distribution", "master-api", "returns", "settings"]);
+  var sections = new Set(["dashboard", "wallet", "fund", "burn", "node", "distribution", "airdrops", "master-api", "returns", "settings"]);
   function requestSection(section) { if (sections.has(section)) wanted = section; }
   window.kai.onEvent?.("kai-plugin:navigate", function (value) { requestSection(value?.section || "dashboard"); });
   window.addEventListener("message", function (e) {

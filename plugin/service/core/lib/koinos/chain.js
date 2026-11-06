@@ -398,6 +398,53 @@ class ChainService {
     }
   }
 
+  async submitAirdrop(signer, action, beforeBroadcast) {
+    let journaled = false;
+    try {
+      if (this.nonceCoordinator || typeof beforeBroadcast !== "function") throw Error("Airdrop journal is required.");
+      if (!["koin", "vhp"].includes(action.token)) throw Error("Choose KOIN or VHP.");
+      return await this.transfer(signer, { to: action.address, amountSat: action.amountSat, token: action.token,
+        beforeBroadcast: async identity => { await beforeBroadcast(identity); journaled = true; } });
+    } catch (error) {
+      const result = rpcError(error); result.airdropNotBroadcast = !journaled; throw result;
+    }
+  }
+
+  // Only a canonical irreversible receipt can release an uncertain payment.
+  // Absence from a node/mempool is never evidence that it is safe to resend.
+  async airdropOutcome(identity) {
+    if (!identity?.txId || !identity.chainId) return null;
+    const provider = this.provider();
+    if (await provider.getChainId() !== identity.chainId) throw Error("Airdrop transaction belongs to another chain.");
+    const lookup = await provider.getTransactionsById([identity.txId]);
+    const records = (lookup?.transactions || []).filter(r => r.transaction?.id === identity.txId);
+    if (records.length !== 1) return null;
+    const candidates = records[0].containing_blocks || [];
+    if (!Array.isArray(candidates) || candidates.length > 100) throw Error("Invalid transaction lookup.");
+    if (!candidates.length) return null;
+    const head = await provider.getHeadInfo(), lib = Number(head.last_irreversible_block);
+    const height = Number(head.head_topology?.height), time = Number(head.head_block_time);
+    if (!Number.isSafeInteger(lib) || lib <= 0 || !Number.isSafeInteger(height) || lib > height ||
+        !Number.isFinite(time) || Math.abs(Date.now() - time) > 120000) throw Error("Wait for a current chain head before checking this transaction.");
+    const blocks = await provider.getBlocksById(candidates, { returnBlock: false, returnReceipt: false });
+    for (const item of blocks.block_items || []) {
+      const h = Number(item.block_height);
+      if (!candidates.includes(item.block_id) || !Number.isSafeInteger(h) || h <= 0 || h > lib) continue;
+      const [canonical] = await provider.getBlocks(h, 1, head.head_topology.id, { returnBlock: true, returnReceipt: true });
+      if (canonical?.block_id !== item.block_id) continue;
+      if (canonical.block?.id !== item.block_id || canonical.receipt?.id !== item.block_id ||
+          Number(canonical.block.header?.height) !== h || Number(canonical.receipt.height) !== h) throw Error("Inconsistent airdrop block receipt.");
+      const included = canonical.block.transactions?.filter(tx => tx.id === identity.txId);
+      const receipts = canonical.receipt.transaction_receipts?.filter(r => r.id === identity.txId);
+      if (included?.length !== 1 || receipts?.length !== 1 || receipts[0].rpc_error ||
+          ![undefined, false, true].includes(receipts[0].reverted)) throw Error("Missing airdrop transaction receipt.");
+      if (included[0].header?.chain_id !== identity.chainId || included[0].header?.nonce !== identity.nonce ||
+          await provider.getChainId() !== identity.chainId) throw Error("Airdrop transaction identity changed.");
+      return { status: receipts[0].reverted ? "reverted" : "sent", blockNumber: h };
+    }
+    return null;
+  }
+
   // Registers the node's block-signing public key (base64url, as written by
   // the block producer to public.key) to the producer address.
   async registerProducerKey(signer, publicKeyB64url) {

@@ -11,6 +11,7 @@ const { ChainService } = require("./koinos/chain");
 const { NodeManager } = require("./koinos/node-manager");
 const dataMove = require("./koinos/data-move");
 const { SetupService } = require("./koinos/setup");
+const { Airdrops } = require("./koinos/airdrops");
 const { DistributionEngine } = require("./koinos/distribution");
 const { MasterNodeApi } = require("./koinos/master-api");
 const { checkHistory } = require("./koinos/history-check");
@@ -42,7 +43,7 @@ const { compareRoutes, descriptor } = require("./koinos/fund-routes");
 const DEFAULT_ONRAMP_ENDPOINT = "https://koinos-node.vercel.app/api/session";
 const ONRAMP_APP_KEY = "kkapp_71854dc40591df1aeb8811a514e3dbc302bb382f";
 
-function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, masterApi, stats, localActivity, bridge, routeC, userData, appVersion, defaultNodeData = null, priceCache: injectedPriceCache = null, producerCache: injectedProducerCache = null, vaultRequest = undefined, onEvent = () => {} }) {
+function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, airdrops, masterApi, stats, localActivity, bridge, routeC, userData, appVersion, defaultNodeData = null, priceCache: injectedPriceCache = null, producerCache: injectedProducerCache = null, vaultRequest = undefined, onEvent = () => {} }) {
   const channels = new Map();
   const handle = (channel, fn) => channels.set(channel, fn);
   const { ProducerCustody } = require("./koinos/producer-custody");
@@ -615,6 +616,20 @@ function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards
   });
   handle("rewards:runNow", () => { custody.requireLocal(); return rewards.tick("manual"); });
 
+  if (airdrops) {
+    handle("airdrop:preview", input => airdrops.preview(input));
+    handle("airdrop:status", () => airdrops.status());
+    handle("airdrop:discard", input => airdrops.discard(input));
+    handle("airdrop:create", input => airdrops.create(input));
+    handle("airdrop:pause", () => airdrops.pause());
+    handle("airdrop:reconcile", input => airdrops.reconcile(input));
+    handle("airdrop:csv", ({ id }) => airdrops.csv(id));
+    handle("airdrop:run", input => {
+      if (distribution?.config().enabled || rewards.config().enabled) throw Error("Pause distribution and disable reward returns before sending an airdrop.");
+      return airdrops.run(input);
+    });
+  }
+
   if (distribution) {
     handle("distribution:status", () => distribution.status());
     handle("distribution:configure", (input = {}) => {
@@ -940,7 +955,7 @@ function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards
   // Serialize custody/network/node mutations so asynchronous RPC checks cannot
   // authorize a start, rotation or draft against a different producer context.
   let producerMutation = false;
-  for (const name of ["distribution:configure", "distribution:runNow", "distribution:distributeNow", "distribution:resetStats", "masterApi:configure", "producer:vaultConnect", "producer:vaultUse", "producer:vaultPrepare", "producer:vaultSend", "producer:vaultDisconnect", "producer:vaultStatus", "producer:configure", "producer:key", "producer:prepare", "producer:broadcast", "producer:register", "settings:update", "node:start", "node:stop", "node:repairServices", "chain:burn", "chain:send", "rewards:runNow", "rewards:configure"]) {
+  for (const name of ["airdrop:discard", "airdrop:create", "airdrop:run", "airdrop:reconcile", "distribution:configure", "distribution:runNow", "distribution:distributeNow", "distribution:resetStats", "masterApi:configure", "producer:vaultConnect", "producer:vaultUse", "producer:vaultPrepare", "producer:vaultSend", "producer:vaultDisconnect", "producer:vaultStatus", "producer:configure", "producer:key", "producer:prepare", "producer:broadcast", "producer:register", "settings:update", "node:start", "node:stop", "node:repairServices", "chain:burn", "chain:send", "rewards:runNow", "rewards:configure"]) {
     const fn = channels.get(name);
     if (!fn) continue;
     channels.set(name, async input => {
@@ -954,6 +969,7 @@ function buildChannels({ settings, state, wallet, chain, nodeMgr, setup, rewards
   // Native review data is not a renderer channel. Keep approvals bound to the
   // original stored draft/configuration and show its human-readable summary.
   channels.review = channel => {
+    if (["airdrop:run", "airdrop:reconcile", "airdrop:discard"].includes(channel) && airdrops) return airdrops.review();
     if (channel === "producer:vaultSend") {
       if (!vault.draft) throw Error("Prepare a fresh Koin Vault transaction.");
       return { draftId: vault.draft.id, summary: structuredClone(vault.draft.summary), fingerprint: require("node:crypto").createHash("sha256").update(JSON.stringify(vault.draft)).digest("hex") };
@@ -1030,6 +1046,7 @@ function createKoinosNode({ dataDir, wallet, appVersion, onEvent = () => {}, sto
       if (rewards.config().enabled || rewards._busy) throw new Error("Reward returns must be disabled.");
     },
   });
+  const airdrops = new Airdrops({ chain, wallet, store: storeFactory(path.join(root, "airdrops.json"), {}), onEvent });
   const masterApi = new MasterNodeApi({ root, settings, storeFactory });
 
   const bridge = new BridgeOrchestrator({
@@ -1053,7 +1070,7 @@ function createKoinosNode({ dataDir, wallet, appVersion, onEvent = () => {}, sto
 
   // Core plugins inject guarded stores and lifecycle/spend coordination while
   // preserving the same channel handlers used by the original application.
-  configureServices({ settings, state, chain, nodeMgr, setup, rewards, distribution, masterApi, bridge, routeC });
+  configureServices({ settings, state, chain, nodeMgr, setup, rewards, distribution, airdrops, masterApi, bridge, routeC });
   nodeMgr.supervise(() => {
     if (!networkAllowed()) throw new Error("Node supervision is paused in Local-Only mode");
     return chain.network().id;
@@ -1082,7 +1099,7 @@ function createKoinosNode({ dataDir, wallet, appVersion, onEvent = () => {}, sto
   const priceCache = createPriceCache();
   const producerCache = createProducerCache();
   const channels = buildChannels({
-    settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, masterApi, stats, localActivity, bridge, routeC,
+    settings, state, wallet, chain, nodeMgr, setup, rewards, distribution, airdrops, masterApi, stats, localActivity, bridge, routeC,
     userData: root, appVersion, defaultNodeData, priceCache, producerCache, onEvent,
   });
 

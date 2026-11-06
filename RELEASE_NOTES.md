@@ -1,3 +1,12 @@
+## 0.1.7 — Airdrops (source candidate)
+
+- Add the Airdrops tab: KOIN or VHP, equal total splits and CSV/tab-separated per-wallet amounts.
+- Preview exact allocations, validate address checksums/duplicates and conserve all eight decimal places.
+- Save campaign progress in a guarded native journal; pause/resume with password proof and native review, serialized with other wallet spending.
+- Record transaction identity before broadcast and stop on uncertainty. Reconcile only against canonical irreversible receipts; never infer a safe resend from a missing RPC result.
+- Export complete CSV payment records and retain completed campaigns. Add English/Spanish/Portuguese/French/German interface labels.
+- Requires publisher signing and release verification before marketplace installation. No new smart contract is required.
+
 # Master KAI Koinos Node 0.1.6
 
 The dashboard reads recent production directly from this computer’s local node, even while the account-history index is rebuilding. A separate **Recent rewards · local chain** panel shows confirmed blocks, minted KOIN, consumed VHP and net profit for the explicitly labeled local window. The activity feed uses those verified receipts and removes overlapping history rows.

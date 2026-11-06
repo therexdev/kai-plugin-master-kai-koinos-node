@@ -9,6 +9,7 @@ Requires **KAI Core 0.7.3 or later**. Install it from the Plugins marketplace or
 The nine sections are **Dashboard**, **Wallet**, **Fund node**, **Burn KOIN → VHP**, **Node**, **Distribution**, **Node API**, **Reward returns**, and **Node settings**. The layout and features are carried forward from Master Koinos AI Node, including:
 
 - Dashboard synchronization, KOIN/VHP/Mana balances, net worth, blocks produced, rewards, consumed VHP, profit, burns, deposits, node value and return projections.
+- An Airdrops tab for equal KOIN/VHP splits or comma/tab-separated per-wallet amounts, with reviewed recipient lists, resumable payment journals and CSV reports.
 - A plugin-owned encrypted wallet, funding and swap routes, transaction history, external producer custody and Koin Vault signing.
 - Docker setup, logs, automatic recovery, service repair, checked quick sync, backups and explicit chain-data migration.
 - Community distribution with consumed-VHP reburning, configurable profit percentages, AI/producer/combined pools, saved recipients, daily settlement, mana-aware queued payouts and history.
@@ -69,3 +70,17 @@ CI tests on Windows, macOS and Linux and publishes only the pre-signed immutable
 This plugin follows the language saved in KAI Core Settings and applies changes to open views. English, Spanish, Brazilian Portuguese, French and German are supported through bundled offline catalogs. User content and identifiers stay literal. These source changes require Core 0.7.17+ for the live locale API; release the Core update before publishing a new signed plugin package and catalog entry. See the [public localization API](https://github.com/therexdev/kai-core/blob/main/docs/foundation/PLUGIN_AUTHOR_GUIDE.md#shared-language-and-localization-core-0717).
 
 [Interface language and translation guide](docs/localization.md).
+
+
+## Airdrops (0.1.7 candidate)
+
+1. Open **Airdrops** and choose **KOIN** or **VHP**. Funds come from this plugin's Node wallet on the selected network, not the Core wallet or an external producer wallet.
+2. Choose **Split a total equally** and enter the total plus a list of addresses; or choose **Amount for each wallet** and paste `ADDRESS,AMOUNT` rows or two tab-separated spreadsheet columns. `ADDRESS,TOKEN-AMOUNT` is an optional header. Amounts use a decimal point, up to eight decimal places, and no thousands separators. Limit: 2,000 unique recipients per campaign.
+3. Click **Preview airdrop**, inspect every recipient and the total, then **Save reviewed list**. Equal splits allocate remaining atomic units (0.00000001) to the first addresses in list order. Duplicates, self-payments, invalid checksums, zero/negative amounts and excessive precision are rejected. An untouched draft can be discarded and recreated.
+4. Pause community distribution and disable reward returns. Keep enough liquid KOIN and mana; VHP transfers also need mana and reduce the sending wallet's mining power.
+5. Click **Start / resume airdrop**, prove the Node wallet password and approve the native review. Keep the app running. **Pause airdrop** finishes the current transaction and stops before the next. Reopening the app never automatically resumes sending.
+6. Use **Export payment record CSV** for the KAI/KOIN drop record. Reports include the network, sender, token, every recipient and exact amount, payment status, transaction ID and prior attempt IDs. Completed campaigns remain in Previous airdrops (up to 20 archived campaigns).
+
+The native journal records each transaction identity before broadcast. A timeout or lost response stops the campaign; an uncertain payment is never automatically resent. **Check uncertain transaction** requires an exact transaction on the original chain with a canonical irreversible receipt. A verified successful payment is marked sent; a verified reverted payment can be retried after a fresh start/resume approval. Missing or unindexed transactions remain blocked. If the RPC does not expose transaction/block history, restore an endpoint with that history before checking again; do not delete the journal to bypass recovery. `sent` means observed included (or reconciled irreversible), not that every normal payment has already reached finality.
+
+The source candidate has automated synthetic transaction/native-boundary tests. No live funds were sent. Publisher signing and the release CI workflow are still required for an installable update; the old immutable package signature cannot sign changed source.

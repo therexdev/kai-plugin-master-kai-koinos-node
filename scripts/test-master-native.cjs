@@ -10,7 +10,7 @@ const electronPath = require(path.join(coreRoot, "node_modules/electron"));
 const { waitForInspectorObservation } = require(path.join(coreRoot, "scripts/foundation/inspector-observation"));
 const { signingPayload, BINARY, verifyPackage } = require(path.join(coreRoot, "core/lib/plugins/package"));
 const id = "kai.master-kai-koinos-node", otherId = "kai.koinos-node";
-const views = ["dashboard", "wallet", "fund", "burn", "node", "distribution", "master-api", "returns", "settings"];
+const views = ["dashboard", "wallet", "fund", "burn", "node", "distribution", "airdrops", "master-api", "returns", "settings"];
 
 function installSource(manager, source, key) {
   const manifest = JSON.parse(fs.readFileSync(path.join(source, "manifest.json"), "utf8")), files = {};
@@ -82,7 +82,7 @@ async function main() {
       assert.deepEqual(isolation, { node: "undefined", core: "undefined", bridge: "function", title: "Master KAI Koinos Node" });
       report.service = { version: info.version, walletExists: wallet.exists };
     });
-    await check("All nine original Master Node sections render in their original order", async () => {
+    await check("All ten Master Node sections render in their original order", async () => {
       assert.deepEqual(await appEval("Array.from(document.querySelectorAll('#nav [data-view]'),item=>item.dataset.view)"), views);
       for (const view of views) {
         await appEval(`document.querySelector('[data-view="${view}"]').click();true`);
