@@ -79,9 +79,10 @@ class ProducerIndex {
       this.head = height; this.target = target;
       if (this.chainId && this.chainId !== chain.chain_id) throw new Error("Node chain ID changed; disable the API and select the correct node.");
       this.chainId = chain.chain_id;
-      const last = this.blocks.at(-1);
-      if (last && (last.height > target || (await this.read(last.height, 1, headId))[0].id !== last.id)) { this.blocks = []; this.updatedAt = 0; }
       const floor = Math.max(1, target-WINDOW+1);
+      const last = this.blocks.at(-1);
+      // Expired checkpoints must not depend on history outside the current window.
+      if (last && (last.height < floor || last.height > target || (await this.read(last.height, 1, headId))[0].id !== last.id)) { this.blocks = []; this.updatedAt = 0; }
       this.blocks = this.blocks.filter(b => b.height >= floor);
       let from = this.blocks.at(-1)?.height + 1 || floor;
       const end = Math.min(target, from+499);
@@ -233,10 +234,19 @@ class MasterNodeApi {
       const rpcStatus = gateway.status(); rpcStatus.ready = cfg.rpcEnabled && rpcStatus.ready;
       if (req.url === "/v1/token-tracker/producers") return reply(healthy ? 200 : 503,{ ...p, available:healthy, stale:!healthy, error:healthy ? null : p?.error || "Producer data unavailable" });
       if (req.url === "/healthz/rpc") return reply(rpcStatus.ready ? 200 : 503,rpcStatus);
-      const data = { ready:healthy, source:"Master KAI Koinos Node", chain_id:p?.chain_id || rpcStatus.chain_id,
+      // General status describes the public RPC. Keep the original producer-only
+      // /healthz contract for existing monitors and expose both scopes explicitly.
+      const producerHealth = req.url === "/healthz";
+      const producers = { ready:healthy, complete:!!p?.complete, stale:!healthy,
+        indexed_height:p?.indexed_height || 0, finalized_height:p?.finalized_height || 0,
+        window_blocks:p?.window_blocks || WINDOW, total_blocks:p?.total_blocks || 0,
+        updated_at:p?.updated_at || null,
+        error:healthy ? null : this.indexError || p?.error || "Producer data unavailable" };
+      const data = { ready:producerHealth ? healthy : rpcStatus.ready, readiness_scope:producerHealth ? "producers" : "rpc",
+        source:"Master KAI Koinos Node", chain_id:rpcStatus.chain_id || p?.chain_id,
         head_height:rpcStatus.head_height || p?.head_height || 0, indexed_height:p?.indexed_height || 0, updated_at:p?.updated_at || null,
-        rpc: rpcStatus, rpc_path:"/", producers_path:"/v1/token-tracker/producers" };
-      return reply(req.url === "/healthz" && !healthy ? 503 : 200,data);
+        rpc:rpcStatus, producers, rpc_path:"/", producers_path:"/v1/token-tracker/producers" };
+      return reply(producerHealth && !healthy ? 503 : 200,data);
     });
     const server = this.server;
     this.server.requestTimeout = 5000; this.server.headersTimeout = 5000; this.server.maxConnections = 32;

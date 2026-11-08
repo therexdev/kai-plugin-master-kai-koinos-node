@@ -1,7 +1,7 @@
 "use strict";
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),os=require("node:os"),path=require("node:path"),http=require("node:http");
 const {JsonStore}=require("../plugin/service/core/lib/store"),{Signer}=require("koilib");
-const {ProducerIndex,MasterNodeApi,validateConfig,rpc}=require("../plugin/service/core/lib/koinos/master-api");
+const {ProducerIndex,MasterNodeApi,validateConfig,rpc,WINDOW}=require("../plugin/service/core/lib/koinos/master-api");
 const ADDRESS=new Signer({privateKey:"1".padStart(64,"0")}).address;
 test("API listener recovers after a temporary port conflict and honors explicit disable", async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"master-listener-"));
@@ -40,6 +40,43 @@ test("bounded backfill, stale data and missing history cannot report ready",asyn
   const f=fixture(t,501);assert.equal((await f.index.refresh()).available,false);assert.equal(f.index.blocks.length,500);assert.equal((await f.index.refresh()).available,true);
   assert.ok(f.calls.filter(c=>c.p).every(c=>c.p.num_blocks<=100));f.now+=100000;assert.equal(f.index.snapshot().available,false);
   const call=f.call;f.index.call=async(m,p)=>m.startsWith("block_store")?{block_items:[]}:call(m,p);assert.equal((await f.index.refresh()).available,false);assert.match(f.index.error,/incomplete history/);
+});
+test("a missing expired checkpoint cannot prevent rebuilding the current finalized window", async t => {
+  const f=fixture(t,3);await f.index.refresh();
+  f.n=WINDOW+4;f.now+=WINDOW*3000;
+  const floor=f.n-WINDOW+1,call=f.call;
+  f.index.call=async(method,params)=>{
+    if(method.startsWith("block_store")&&Number(params.ancestor_start_height)<floor)throw Error("Block not present - expired history");
+    return call(method,params);
+  };
+  f.calls.length=0;
+  const snapshot=await f.index.refresh();
+  assert.equal(snapshot.error,"Indexing finalized block history");
+  assert.equal(snapshot.available,false,"A partial replacement window must not report ready");
+  assert.equal(snapshot.complete,false);
+  assert.equal(snapshot.total_blocks,500);
+  assert.equal(f.index.blocks[0].height,floor);
+  assert.equal(snapshot.indexed_height,floor+499);
+  assert.ok(f.calls.filter(c=>c.p).every(c=>Number(c.p.ancestor_start_height)>=floor));
+  const reopened=new ProducerIndex({store:new JsonStore(path.join(f.root,"index.json")),call:f.index.call,now:()=>f.now});
+  assert.equal(reopened.blocks[0].height,floor,"Only the rebuilt public index is checkpointed");
+  assert.equal((await reopened.refresh()).total_blocks,1000);
+});
+test("a missing checkpoint at the current window boundary still requires canonical verification", async t => {
+  const f=fixture(t,3);await f.index.refresh();
+  f.n=WINDOW+2;f.now+=WINDOW*3000;
+  const call=f.call,requests=[];
+  f.index.call=async(method,params)=>{
+    if(method.startsWith("block_store")){
+      requests.push(params.ancestor_start_height);
+      if(Number(params.ancestor_start_height)===3)throw Error("Block not present - current window");
+    }
+    return call(method,params);
+  };
+  const snapshot=await f.index.refresh();
+  assert.equal(snapshot.available,false);
+  assert.match(snapshot.error,/current window/);
+  assert.deepEqual(requests,["3"]);
 });
 test("API serves cached public data and refuses writes, arbitrary routes and nonlocal upstreams",async t=>{
   for(const rpcUrl of ["https://example.com","http://localhost:8085","http://127.0.0.1/path","http://user:pass@127.0.0.1"])assert.throws(()=>validateConfig({rpcUrl}));

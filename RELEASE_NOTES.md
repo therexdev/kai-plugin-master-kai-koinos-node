@@ -1,3 +1,11 @@
+## 0.1.8 — RPC readiness and producer-index recovery
+
+- Report blockchain RPC readiness at the main URL, `/rpc` and `/v1/status`, independently of producer-history indexing. Include separate producer readiness, coverage and indexing errors.
+- Preserve `/healthz` as the existing producer-health check, explicitly label its scope, and retain `/healthz/rpc` for RPC monitoring.
+- Rebuild an expired producer checkpoint from the current finalized window without first requesting obsolete historical blocks. Missing blocks within the current window still prevent producer readiness.
+- Preserve the distinction between a working RPC, a complete producer window and archival/account-history completeness. This update does not repair missing database records or establish the cause of an earlier Cloudflare 502.
+- Requires Core 0.7.17 or newer. Uses the established publisher identity; tests use synthetic data and send no live funds.
+
 ## 0.1.7 — Airdrops
 
 - Add the Airdrops tab: KOIN or VHP, equal total splits and CSV/tab-separated per-wallet amounts.

@@ -72,6 +72,16 @@ This plugin follows the language saved in KAI Core Settings and applies changes 
 [Interface language and translation guide](docs/localization.md).
 
 
+## Node API readiness (0.1.8)
+
+`GET /`, `/rpc` and `/v1/status` report public blockchain RPC readiness in `ready` and label it with `readiness_scope: "rpc"`. The `rpc` object includes the checked chain/head and its health timestamp. A disabled RPC reports not ready.
+
+The separate `producers` object reports finalized-window readiness, coverage and any indexing error. Missing historical blocks can leave `producers.ready: false` while current-chain RPC remains ready. Its `complete` flag covers only the bounded producer window; it does not certify archival or account-history completeness. Existing top-level `indexed_height` and `updated_at` remain producer-index fields.
+
+Use `/healthz/rpc` for RPC uptime checks. For compatibility, `/healthz` remains producer-scoped (`readiness_scope: "producers"`) and returns HTTP 503 when producer data is unavailable, as does `/v1/token-tracker/producers`. General status routes return HTTP 200 with their readiness details.
+
+An entirely expired producer checkpoint is now discarded before historical validation, allowing the index to rebuild from the current finalized window. Missing blocks inside that window still report an error; this update does not repair missing database records.
+
 ## Airdrops (0.1.7)
 
 1. Open **Airdrops** and choose **KOIN** or **VHP**. Funds come from this plugin's Node wallet on the selected network, not the Core wallet or an external producer wallet.
@@ -83,4 +93,4 @@ This plugin follows the language saved in KAI Core Settings and applies changes 
 
 The native journal records each transaction identity before broadcast. A timeout or lost response stops the campaign; an uncertain payment is never automatically resent. **Check uncertain transaction** requires an exact transaction on the original chain with a canonical irreversible receipt. A verified successful payment is marked sent; a verified reverted payment can be retried after a fresh start/resume approval. Missing or unindexed transactions remain blocked. If the RPC does not expose transaction/block history, restore an endpoint with that history before checking again; do not delete the journal to bypass recovery. `sent` means observed included (or reconciled irreversible), not that every normal payment has already reached finality.
 
-This release uses the established publisher signature and automated synthetic transaction/native-boundary tests. No live funds were sent. Install the verified 0.1.7 package after the release workflow completes.
+Releases use the established publisher signature and automated synthetic transaction/native-boundary tests. No live funds are sent by these tests. Install the current verified package after the release workflow completes.

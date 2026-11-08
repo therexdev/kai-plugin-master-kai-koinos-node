@@ -53,7 +53,45 @@ test("healthy blockchain RPC remains available when the producer cache cannot op
   assert.equal((await fetch(f.url+"/healthz/rpc")).status,200);
   assert.equal((await (await f.post(request("chain.get_head_info"))).json()).result.head_topology.height,"3");
   assert.equal((await fetch(f.url+"/v1/token-tracker/producers")).status,503);
+  const status = await (await fetch(f.url)).json();
+  assert.equal(status.ready,true);
+  assert.equal(status.readiness_scope,"rpc");
+  assert.equal(status.producers.ready,false);
+  assert.match(status.producers.error,/checkpoint cannot open/);
   f.settings.set("network","harbinger");await f.api.refresh();assert.equal(f.api.status().listening,false);
+});
+
+test("general status separates healthy RPC from missing producer history and preserves producer health", async t => {
+  const f = await fixture(t);
+  // Await startup indexing before replacing its result with the missing-history
+  // snapshot. Pause background refreshes so each assertion observes that state.
+  if (f.api.refreshing) await f.api.refreshing;
+  if (f.api.healthChecking) await f.api.healthChecking;
+  clearTimeout(f.api.timer); clearTimeout(f.api.healthTimer);
+  f.api.payload = { ...f.api.payload, available:false, complete:false, stale:true,
+    error:"Local RPC rejected block_store.get_blocks_by_height: Block not present", total_blocks:2 };
+  for (const route of ["/", "/rpc", "/v1/status"]) {
+    const res = await fetch(f.url + route), status = await res.json();
+    assert.equal(res.status,200);
+    assert.equal(status.ready,true); assert.equal(status.rpc.ready,true);
+    assert.equal(status.readiness_scope,"rpc");
+    assert.equal(status.producers.ready,false); assert.equal(status.producers.complete,false);
+    assert.equal(status.producers.stale,true); assert.equal(status.producers.total_blocks,2);
+    assert.match(status.producers.error,/Block not present/);
+  }
+  const legacy = await fetch(f.url + "/healthz"), health = await legacy.json();
+  assert.equal(legacy.status,503); assert.equal(health.ready,false);
+  assert.equal(health.readiness_scope,"producers"); assert.equal(health.rpc.ready,true);
+  assert.equal((await fetch(f.url + "/healthz/rpc")).status,200);
+  assert.equal((await fetch(f.url + "/v1/token-tracker/producers")).status,503);
+
+  f.api.payload = { ...f.api.payload, available:true, complete:true, stale:false, error:null, updated_at:Date.now() };
+  f.state.mode = "http"; await f.api.publicRpc.refreshHealth();
+  const down = await (await fetch(f.url)).json();
+  assert.equal(down.ready,false); assert.equal(down.rpc.ready,false);
+  assert.equal(down.producers.ready,true); assert.equal(down.producers.error,null);
+  const producerHealth = await fetch(f.url + "/healthz");
+  assert.equal(producerHealth.status,200); assert.equal((await producerHealth.json()).ready,true);
 });
 
 test("real HTTP RPC supports koilib, browser CORS and producer routes on the same listener", async t => {
@@ -140,14 +178,18 @@ test("wrong chain, stale head, network changes and disable all stop public forwa
   const f = await fixture(t);
   f.state.chain = "not-mainnet"; await f.api.publicRpc.refreshHealth();
   assert.equal((await f.post(request("chain.get_head_info"))).status, 503);
+  assert.equal((await (await fetch(f.url)).json()).ready, false);
   f.state.chain = MAINNET_CHAIN_ID; f.state.time = Date.now() - 120000; await f.api.publicRpc.refreshHealth();
   assert.equal((await fetch(f.url + "/healthz/rpc")).status, 503);
+  assert.equal((await (await fetch(f.url)).json()).ready, false);
   f.state.time = Date.now(); await f.api.publicRpc.refreshHealth(); f.settings.set("network", "harbinger");
   assert.equal((await f.post(request("chain.get_head_info"))).status, 503);
+  assert.equal((await (await fetch(f.url)).json()).ready, false);
   f.settings.set("network", "mainnet");
   await f.api.configure({ rpcEnabled: false });
   assert.equal((await f.post(request("chain.get_head_info"))).status, 403);
   assert.equal((await fetch(f.url + "/healthz/rpc")).status, 503);
+  assert.equal((await (await fetch(f.url)).json()).ready, false);
 });
 
 test("unsupported optional indexes fail explicitly so clients can use their backups", async t => {
